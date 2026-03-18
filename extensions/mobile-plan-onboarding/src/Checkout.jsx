@@ -1,5 +1,6 @@
 import "@shopify/ui-extensions/preact";
 
+const MOBILE_SUBSCRIPTION_TYPE = "Mobile-subscription";
 const NUMBER_API_BASE_URL =
   "https://mock-phone-numbers-759347772663.europe-west6.run.app";
 
@@ -25,6 +26,13 @@ async function flushAttributes() {
 }
 
 export default function () {
+  const lines = shopify.lines.current;
+  const hasMobilePlan = lines.some(
+    (line) =>
+      line.merchandise?.product?.productType === MOBILE_SUBSCRIPTION_TYPE,
+  );
+  if (!hasMobilePlan) return;
+
   const section = document.createElement("s-section");
 
   const heading = document.createElement("s-heading");
@@ -78,8 +86,9 @@ export default function () {
 
 function renderPortFields(container) {
   const phoneField = document.createElement("s-text-field");
-  phoneField.setAttribute("label", "Current phone number");
+  phoneField.setAttribute("label", "Phone number to port");
   phoneField.setAttribute("required", "");
+  phoneField.setAttribute("placeholder", "+41 7x xxx xx xx");
   phoneField.addEventListener("input", (e) => {
     const val = e.target.value || "";
     if (val) {
@@ -98,8 +107,30 @@ function renderPortFields(container) {
     }
   });
 
+  const consentBox = document.createElement("s-box");
+  consentBox.setAttribute("padding", "tight");
+
+  const consentCheckbox = document.createElement("s-checkbox");
+  consentCheckbox.setAttribute("id", "port-consent");
+  consentCheckbox.setAttribute(
+    "label",
+    "I authorize the transfer of my phone number to the new provider. " +
+      "I understand that my current contract may be affected.",
+  );
+  consentCheckbox.addEventListener("change", (e) => {
+    const checked = e.target.checked ? "true" : "false";
+    queueAttributeChange("mobile_port_consent", checked);
+    queueAttributeChange(
+      "mobile_port_consent_timestamp",
+      new Date().toISOString(),
+    );
+  });
+
+  consentBox.appendChild(consentCheckbox);
+
   container.appendChild(phoneField);
   container.appendChild(carrierField);
+  container.appendChild(consentBox);
 }
 
 async function renderNewNumberFields(container) {
@@ -124,6 +155,15 @@ async function renderNewNumberFields(container) {
       warning.setAttribute("tone", "warning");
       warning.textContent = "No numbers are currently available.";
       container.appendChild(warning);
+
+      const retryBtn = document.createElement("s-button");
+      retryBtn.setAttribute("variant", "secondary");
+      retryBtn.textContent = "Try again";
+      retryBtn.addEventListener("click", () => {
+        container.innerHTML = "";
+        renderNewNumberFields(container);
+      });
+      container.appendChild(retryBtn);
       return;
     }
 
@@ -149,6 +189,7 @@ async function renderNewNumberFields(container) {
       const numberObj = numbers.find((n) => n.id === selectedId);
       if (numberObj) {
         queueAttributeChange("mobile_selected_number", numberObj.number);
+        queueAttributeChange("mobile_selected_number_id", numberObj.id);
       }
     });
 
@@ -160,5 +201,14 @@ async function renderNewNumberFields(container) {
     errorBanner.textContent =
       "Unable to load available numbers. Please try again.";
     container.appendChild(errorBanner);
+
+    const retryBtn = document.createElement("s-button");
+    retryBtn.setAttribute("variant", "secondary");
+    retryBtn.textContent = "Retry";
+    retryBtn.addEventListener("click", () => {
+      container.innerHTML = "";
+      renderNewNumberFields(container);
+    });
+    container.appendChild(retryBtn);
   }
 }
