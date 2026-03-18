@@ -10,6 +10,10 @@ handle = "mobile-plan-onboarding"
 target = "purchase.checkout.block.render"
 module = "./src/Checkout.jsx"
 
+  [[extensions.targeting.metafields]]
+  namespace = "custom"
+  key = "monthly_price"
+
 [extensions.capabilities]
 network_access = true
 block_progress = true
