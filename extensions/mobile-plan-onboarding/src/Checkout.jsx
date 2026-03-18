@@ -31,6 +31,8 @@ function el(tag, attrs, children) {
     for (const [k, v] of Object.entries(attrs)) {
       if (k === "textContent") {
         node.textContent = v;
+      } else if (k in node) {
+        node[k] = v;
       } else {
         node.setAttribute(k, v);
       }
@@ -56,45 +58,31 @@ export default function () {
   );
   if (!hasMobilePlan) return;
 
-  const section = el("s-section");
+  const section = el("s-section", { heading: "Mobile Plan Setup" });
 
-  section.appendChild(
-    el("s-heading", { textContent: "Mobile Plan Setup" }),
-  );
-  section.appendChild(
-    el("s-text", {
-      appearance: "subdued",
+  const stack = el("s-stack", { gap: "base" });
+
+  stack.appendChild(
+    el("s-paragraph", {
+      color: "subdued",
       textContent:
         "Set up your mobile plan below. Choose to keep your current number or pick a new one.",
     }),
   );
 
-  const spacer = el("s-box", { padding: "tight" });
-  section.appendChild(spacer);
-
   const choiceList = el("s-choice-list", {
     label: "How would you like to get your phone number?",
   });
-
   choiceList.appendChild(
-    el("s-choice", {
-      id: "port",
-      value: "port",
-      textContent: "Keep my existing number",
-    }),
+    el("s-choice", { id: "port", value: "port", textContent: "Keep my existing number" }),
   );
   choiceList.appendChild(
-    el("s-choice", {
-      id: "new",
-      value: "new",
-      textContent: "Get a new number",
-    }),
+    el("s-choice", { id: "new", value: "new", textContent: "Get a new number" }),
   );
+  stack.appendChild(choiceList);
 
-  section.appendChild(choiceList);
-
-  const dynamicArea = el("s-box", { padding: "tight none" });
-  section.appendChild(dynamicArea);
+  const dynamicArea = el("s-stack", { gap: "base" });
+  stack.appendChild(dynamicArea);
 
   choiceList.addEventListener("change", (e) => {
     const values = e.target.values || [];
@@ -110,22 +98,21 @@ export default function () {
     }
   });
 
+  section.appendChild(stack);
   document.body.appendChild(section);
 }
 
 function renderPortFields(container) {
-  const wrapper = el("s-box", { padding: "base none" });
+  const stack = el("s-stack", { gap: "base" });
 
-  const description = el("s-text", {
-    appearance: "subdued",
-    size: "small",
-    textContent:
-      "We'll transfer your existing number to your new plan. This usually takes 1-2 business days.",
-  });
-  wrapper.appendChild(description);
-
-  const fieldsSpacer = el("s-box", { padding: "tight" });
-  wrapper.appendChild(fieldsSpacer);
+  stack.appendChild(
+    el("s-paragraph", {
+      type: "small",
+      color: "subdued",
+      textContent:
+        "We'll transfer your existing number to your new plan. This usually takes 1-2 business days.",
+    }),
+  );
 
   const phoneField = el("s-text-field", {
     label: "Phone number to port",
@@ -136,7 +123,7 @@ function renderPortFields(container) {
     const val = e.target.value || "";
     if (val) queueAttributeChange("mobile_port_number", val);
   });
-  wrapper.appendChild(phoneField);
+  stack.appendChild(phoneField);
 
   const carrierField = el("s-text-field", {
     label: "Current carrier",
@@ -147,10 +134,7 @@ function renderPortFields(container) {
     const val = e.target.value || "";
     if (val) queueAttributeChange("mobile_current_carrier", val);
   });
-  wrapper.appendChild(carrierField);
-
-  const consentSpacer = el("s-box", { padding: "tight" });
-  wrapper.appendChild(consentSpacer);
+  stack.appendChild(carrierField);
 
   const consentCheckbox = el("s-checkbox", {
     id: "port-consent",
@@ -166,37 +150,34 @@ function renderPortFields(container) {
       new Date().toISOString(),
     );
   });
-  wrapper.appendChild(consentCheckbox);
+  stack.appendChild(consentCheckbox);
 
-  container.appendChild(wrapper);
+  container.appendChild(stack);
 }
 
 async function renderNewNumberFields(container) {
-  const wrapper = el("s-box", { padding: "base none" });
+  const stack = el("s-stack", { gap: "base" });
 
-  const description = el("s-text", {
-    appearance: "subdued",
-    size: "small",
-    textContent: "Choose from our available Swiss mobile numbers.",
+  stack.appendChild(
+    el("s-paragraph", {
+      type: "small",
+      color: "subdued",
+      textContent: "Choose from our available Swiss mobile numbers.",
+    }),
+  );
+
+  const loadingRow = el("s-stack", {
+    direction: "inline",
+    gap: "small",
+    alignItems: "center",
   });
-  wrapper.appendChild(description);
+  loadingRow.appendChild(el("s-spinner"));
+  loadingRow.appendChild(
+    el("s-text", { color: "subdued", textContent: "Loading available numbers..." }),
+  );
+  stack.appendChild(loadingRow);
 
-  const loadingSpacer = el("s-box", { padding: "tight" });
-  wrapper.appendChild(loadingSpacer);
-
-  const loadingBox = el("s-box", {
-    display: "flex",
-    padding: "base",
-  });
-  loadingBox.appendChild(el("s-spinner"));
-  const loadingLabel = el("s-text", {
-    appearance: "subdued",
-    textContent: " Loading available numbers...",
-  });
-  loadingBox.appendChild(loadingLabel);
-  wrapper.appendChild(loadingBox);
-
-  container.appendChild(wrapper);
+  container.appendChild(stack);
 
   try {
     const response = await fetch(
@@ -206,17 +187,17 @@ async function renderNewNumberFields(container) {
     const data = await response.json();
     const numbers = data.numbers || [];
 
-    loadingBox.remove();
+    loadingRow.remove();
 
     if (numbers.length === 0) {
-      const warning = el("s-banner", {
-        tone: "warning",
-        textContent:
-          "No numbers are currently available. Please try again later.",
-      });
-      wrapper.appendChild(warning);
+      stack.appendChild(
+        el("s-banner", {
+          heading: "No numbers available",
+          tone: "warning",
+          textContent: "Please try again later.",
+        }),
+      );
 
-      const retryBox = el("s-box", { padding: "tight none" });
       const retryBtn = el("s-button", {
         variant: "secondary",
         textContent: "Try again",
@@ -225,8 +206,7 @@ async function renderNewNumberFields(container) {
         container.innerHTML = "";
         renderNewNumberFields(container);
       });
-      retryBox.appendChild(retryBtn);
-      wrapper.appendChild(retryBox);
+      stack.appendChild(retryBtn);
       return;
     }
 
@@ -234,7 +214,6 @@ async function renderNewNumberFields(container) {
       label: "Choose your new phone number",
       required: "",
     });
-
     select.appendChild(
       el("s-option", { value: "", disabled: "", textContent: "Select a number" }),
     );
@@ -243,6 +222,8 @@ async function renderNewNumberFields(container) {
         el("s-option", { value: num.id, textContent: num.number }),
       );
     }
+
+    let confirmBanner = null;
 
     select.addEventListener("change", (e) => {
       const selectedId = e.target.value;
@@ -253,25 +234,26 @@ async function renderNewNumberFields(container) {
 
         if (confirmBanner) confirmBanner.remove();
         confirmBanner = el("s-banner", {
+          heading: numberObj.number,
           tone: "success",
-          textContent: `${numberObj.number} will be assigned to your plan.`,
+          textContent: "This number will be assigned to your plan.",
         });
-        wrapper.appendChild(confirmBanner);
+        stack.appendChild(confirmBanner);
       }
     });
 
-    let confirmBanner = null;
-    wrapper.appendChild(select);
+    stack.appendChild(select);
   } catch (err) {
-    loadingBox.remove();
+    loadingRow.remove();
 
-    const errorBanner = el("s-banner", {
-      tone: "critical",
-      textContent: "Unable to load available numbers. Please try again.",
-    });
-    wrapper.appendChild(errorBanner);
+    stack.appendChild(
+      el("s-banner", {
+        heading: "Connection error",
+        tone: "critical",
+        textContent: "Unable to load available numbers. Please try again.",
+      }),
+    );
 
-    const retryBox = el("s-box", { padding: "tight none" });
     const retryBtn = el("s-button", {
       variant: "secondary",
       textContent: "Retry",
@@ -280,7 +262,6 @@ async function renderNewNumberFields(container) {
       container.innerHTML = "";
       renderNewNumberFields(container);
     });
-    retryBox.appendChild(retryBtn);
-    wrapper.appendChild(retryBox);
+    stack.appendChild(retryBtn);
   }
 }

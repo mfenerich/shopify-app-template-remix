@@ -47,6 +47,8 @@ function el(tag, attrs, children) {
     for (const [k, v] of Object.entries(attrs)) {
       if (k === "textContent") {
         node.textContent = v;
+      } else if (k in node) {
+        node[k] = v;
       } else {
         node.setAttribute(k, v);
       }
@@ -74,7 +76,7 @@ export default function () {
   );
   if (subscriptionLines.length === 0) return;
 
-  const wrapper = el("s-box", { padding: "extraTight none" });
+  const wrapper = el("s-stack", { gap: "small" });
   document.body.appendChild(wrapper);
 
   (async () => {
@@ -88,30 +90,27 @@ export default function () {
         if (raw) {
           monthlyTotal += parseMoneyValue(raw) * (line.quantity || 1);
         }
-        const title = line.merchandise?.title || line.merchandise?.product?.title;
+        const title =
+          line.merchandise?.title || line.merchandise?.product?.title;
         if (title) planNames.push(title);
       }
 
       if (monthlyTotal > 0) {
         wrapper.appendChild(el("s-divider"));
 
-        const row = el("s-box", {
-          display: "flex",
-          "justify-content": "space-between",
-          padding: "tight none",
+        const row = el("s-stack", {
+          direction: "inline",
+          justifyContent: "space-between",
+          inlineSize: "100%",
         });
 
         row.appendChild(
-          el("s-text", {
-            size: "small",
-            textContent: "Monthly subscription",
-          }),
+          el("s-text", { textContent: "Monthly subscription" }),
         );
 
         row.appendChild(
           el("s-text", {
-            size: "small",
-            emphasis: "bold",
+            type: "strong",
             textContent: formatPrice(monthlyTotal, currencyCode) + " /mo",
           }),
         );
@@ -119,12 +118,13 @@ export default function () {
         wrapper.appendChild(row);
 
         if (planNames.length > 0) {
-          const detail = el("s-text", {
-            size: "small",
-            appearance: "subdued",
-            textContent: planNames.join(", "),
-          });
-          wrapper.appendChild(detail);
+          wrapper.appendChild(
+            el("s-paragraph", {
+              type: "small",
+              color: "subdued",
+              textContent: planNames.join(", "),
+            }),
+          );
         }
       }
     } catch (e) {
