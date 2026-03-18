@@ -25,7 +25,28 @@ async function flushAttributes() {
   }
 }
 
-
+function el(tag, attrs, children) {
+  const node = document.createElement(tag);
+  if (attrs) {
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === "textContent") {
+        node.textContent = v;
+      } else {
+        node.setAttribute(k, v);
+      }
+    }
+  }
+  if (children) {
+    for (const child of Array.isArray(children) ? children : [children]) {
+      if (typeof child === "string") {
+        node.appendChild(document.createTextNode(child));
+      } else if (child) {
+        node.appendChild(child);
+      }
+    }
+  }
+  return node;
+}
 
 export default function () {
   const lines = shopify.lines.current;
@@ -35,38 +56,44 @@ export default function () {
   );
   if (!hasMobilePlan) return;
 
-  const section = document.createElement("s-section");
+  const section = el("s-section");
 
-  const heading = document.createElement("s-heading");
-  heading.textContent = "Mobile Plan Setup";
-  section.appendChild(heading);
-
-  const intro = document.createElement("s-text");
-  intro.textContent = "Complete the following to set up your mobile plan.";
-  section.appendChild(intro);
-
-  const choiceList = document.createElement("s-choice-list");
-  choiceList.setAttribute(
-    "label",
-    "How would you like to get your phone number?",
+  section.appendChild(
+    el("s-heading", { textContent: "Mobile Plan Setup" }),
+  );
+  section.appendChild(
+    el("s-text", {
+      appearance: "subdued",
+      textContent:
+        "Set up your mobile plan below. Choose to keep your current number or pick a new one.",
+    }),
   );
 
-  const choicePort = document.createElement("s-choice");
-  choicePort.setAttribute("id", "port");
-  choicePort.setAttribute("value", "port");
-  choicePort.textContent = "Port my existing number";
+  const spacer = el("s-box", { padding: "tight" });
+  section.appendChild(spacer);
 
-  const choiceNew = document.createElement("s-choice");
-  choiceNew.setAttribute("id", "new");
-  choiceNew.setAttribute("value", "new");
-  choiceNew.textContent = "Get a new number";
+  const choiceList = el("s-choice-list", {
+    label: "How would you like to get your phone number?",
+  });
 
-  choiceList.appendChild(choicePort);
-  choiceList.appendChild(choiceNew);
+  choiceList.appendChild(
+    el("s-choice", {
+      id: "port",
+      value: "port",
+      textContent: "Keep my existing number",
+    }),
+  );
+  choiceList.appendChild(
+    el("s-choice", {
+      id: "new",
+      value: "new",
+      textContent: "Get a new number",
+    }),
+  );
+
   section.appendChild(choiceList);
 
-  const dynamicArea = document.createElement("s-box");
-  dynamicArea.setAttribute("padding", "base");
+  const dynamicArea = el("s-box", { padding: "tight none" });
   section.appendChild(dynamicArea);
 
   choiceList.addEventListener("change", (e) => {
@@ -87,38 +114,50 @@ export default function () {
 }
 
 function renderPortFields(container) {
-  const phoneField = document.createElement("s-text-field");
-  phoneField.setAttribute("label", "Phone number to port");
-  phoneField.setAttribute("required", "");
-  phoneField.setAttribute("placeholder", "+41 7x xxx xx xx");
+  const wrapper = el("s-box", { padding: "base none" });
+
+  const description = el("s-text", {
+    appearance: "subdued",
+    size: "small",
+    textContent:
+      "We'll transfer your existing number to your new plan. This usually takes 1-2 business days.",
+  });
+  wrapper.appendChild(description);
+
+  const fieldsSpacer = el("s-box", { padding: "tight" });
+  wrapper.appendChild(fieldsSpacer);
+
+  const phoneField = el("s-text-field", {
+    label: "Phone number to port",
+    required: "",
+    placeholder: "+41 7x xxx xx xx",
+  });
   phoneField.addEventListener("input", (e) => {
     const val = e.target.value || "";
-    if (val) {
-      queueAttributeChange("mobile_port_number", val);
-    }
+    if (val) queueAttributeChange("mobile_port_number", val);
   });
+  wrapper.appendChild(phoneField);
 
-  const carrierField = document.createElement("s-text-field");
-  carrierField.setAttribute("label", "Current carrier");
-  carrierField.setAttribute("required", "");
-  carrierField.setAttribute("placeholder", "e.g. Swisscom, Sunrise, Salt");
+  const carrierField = el("s-text-field", {
+    label: "Current carrier",
+    required: "",
+    placeholder: "e.g. Swisscom, Sunrise, Salt",
+  });
   carrierField.addEventListener("input", (e) => {
     const val = e.target.value || "";
-    if (val) {
-      queueAttributeChange("mobile_current_carrier", val);
-    }
+    if (val) queueAttributeChange("mobile_current_carrier", val);
   });
+  wrapper.appendChild(carrierField);
 
-  const consentBox = document.createElement("s-box");
-  consentBox.setAttribute("padding", "tight");
+  const consentSpacer = el("s-box", { padding: "tight" });
+  wrapper.appendChild(consentSpacer);
 
-  const consentCheckbox = document.createElement("s-checkbox");
-  consentCheckbox.setAttribute("id", "port-consent");
-  consentCheckbox.setAttribute(
-    "label",
-    "I authorize the transfer of my phone number to the new provider. " +
+  const consentCheckbox = el("s-checkbox", {
+    id: "port-consent",
+    label:
+      "I authorize the transfer of my phone number to the new provider. " +
       "I understand that my current contract may be affected.",
-  );
+  });
   consentCheckbox.addEventListener("change", (e) => {
     const checked = e.target.checked ? "true" : "false";
     queueAttributeChange("mobile_port_consent", checked);
@@ -127,20 +166,37 @@ function renderPortFields(container) {
       new Date().toISOString(),
     );
   });
+  wrapper.appendChild(consentCheckbox);
 
-  consentBox.appendChild(consentCheckbox);
-
-  container.appendChild(phoneField);
-  container.appendChild(carrierField);
-  container.appendChild(consentBox);
+  container.appendChild(wrapper);
 }
 
 async function renderNewNumberFields(container) {
-  const spinner = document.createElement("s-spinner");
-  const loadingText = document.createElement("s-text");
-  loadingText.textContent = "Loading available numbers...";
-  container.appendChild(spinner);
-  container.appendChild(loadingText);
+  const wrapper = el("s-box", { padding: "base none" });
+
+  const description = el("s-text", {
+    appearance: "subdued",
+    size: "small",
+    textContent: "Choose from our available Swiss mobile numbers.",
+  });
+  wrapper.appendChild(description);
+
+  const loadingSpacer = el("s-box", { padding: "tight" });
+  wrapper.appendChild(loadingSpacer);
+
+  const loadingBox = el("s-box", {
+    display: "flex",
+    padding: "base",
+  });
+  loadingBox.appendChild(el("s-spinner"));
+  const loadingLabel = el("s-text", {
+    appearance: "subdued",
+    textContent: " Loading available numbers...",
+  });
+  loadingBox.appendChild(loadingLabel);
+  wrapper.appendChild(loadingBox);
+
+  container.appendChild(wrapper);
 
   try {
     const response = await fetch(
@@ -150,40 +206,42 @@ async function renderNewNumberFields(container) {
     const data = await response.json();
     const numbers = data.numbers || [];
 
-    container.innerHTML = "";
+    loadingBox.remove();
 
     if (numbers.length === 0) {
-      const warning = document.createElement("s-banner");
-      warning.setAttribute("tone", "warning");
-      warning.textContent = "No numbers are currently available.";
-      container.appendChild(warning);
+      const warning = el("s-banner", {
+        tone: "warning",
+        textContent:
+          "No numbers are currently available. Please try again later.",
+      });
+      wrapper.appendChild(warning);
 
-      const retryBtn = document.createElement("s-button");
-      retryBtn.setAttribute("variant", "secondary");
-      retryBtn.textContent = "Try again";
+      const retryBox = el("s-box", { padding: "tight none" });
+      const retryBtn = el("s-button", {
+        variant: "secondary",
+        textContent: "Try again",
+      });
       retryBtn.addEventListener("click", () => {
         container.innerHTML = "";
         renderNewNumberFields(container);
       });
-      container.appendChild(retryBtn);
+      retryBox.appendChild(retryBtn);
+      wrapper.appendChild(retryBox);
       return;
     }
 
-    const select = document.createElement("s-select");
-    select.setAttribute("label", "Choose your new phone number");
-    select.setAttribute("required", "");
+    const select = el("s-select", {
+      label: "Choose your new phone number",
+      required: "",
+    });
 
-    const placeholder = document.createElement("s-option");
-    placeholder.setAttribute("value", "");
-    placeholder.setAttribute("disabled", "");
-    placeholder.textContent = "Select a number";
-    select.appendChild(placeholder);
-
+    select.appendChild(
+      el("s-option", { value: "", disabled: "", textContent: "Select a number" }),
+    );
     for (const num of numbers) {
-      const option = document.createElement("s-option");
-      option.setAttribute("value", num.id);
-      option.textContent = num.number;
-      select.appendChild(option);
+      select.appendChild(
+        el("s-option", { value: num.id, textContent: num.number }),
+      );
     }
 
     select.addEventListener("change", (e) => {
@@ -192,25 +250,37 @@ async function renderNewNumberFields(container) {
       if (numberObj) {
         queueAttributeChange("mobile_selected_number", numberObj.number);
         queueAttributeChange("mobile_selected_number_id", numberObj.id);
+
+        if (confirmBanner) confirmBanner.remove();
+        confirmBanner = el("s-banner", {
+          tone: "success",
+          textContent: `${numberObj.number} will be assigned to your plan.`,
+        });
+        wrapper.appendChild(confirmBanner);
       }
     });
 
-    container.appendChild(select);
+    let confirmBanner = null;
+    wrapper.appendChild(select);
   } catch (err) {
-    container.innerHTML = "";
-    const errorBanner = document.createElement("s-banner");
-    errorBanner.setAttribute("tone", "critical");
-    errorBanner.textContent =
-      "Unable to load available numbers. Please try again.";
-    container.appendChild(errorBanner);
+    loadingBox.remove();
 
-    const retryBtn = document.createElement("s-button");
-    retryBtn.setAttribute("variant", "secondary");
-    retryBtn.textContent = "Retry";
+    const errorBanner = el("s-banner", {
+      tone: "critical",
+      textContent: "Unable to load available numbers. Please try again.",
+    });
+    wrapper.appendChild(errorBanner);
+
+    const retryBox = el("s-box", { padding: "tight none" });
+    const retryBtn = el("s-button", {
+      variant: "secondary",
+      textContent: "Retry",
+    });
     retryBtn.addEventListener("click", () => {
       container.innerHTML = "";
       renderNewNumberFields(container);
     });
-    container.appendChild(retryBtn);
+    retryBox.appendChild(retryBtn);
+    wrapper.appendChild(retryBox);
   }
 }

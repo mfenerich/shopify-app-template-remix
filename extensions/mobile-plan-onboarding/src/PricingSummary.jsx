@@ -41,6 +41,29 @@ async function fetchMonthlyPrice(productId) {
   }
 }
 
+function el(tag, attrs, children) {
+  const node = document.createElement(tag);
+  if (attrs) {
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === "textContent") {
+        node.textContent = v;
+      } else {
+        node.setAttribute(k, v);
+      }
+    }
+  }
+  if (children) {
+    for (const child of Array.isArray(children) ? children : [children]) {
+      if (typeof child === "string") {
+        node.appendChild(document.createTextNode(child));
+      } else if (child) {
+        node.appendChild(child);
+      }
+    }
+  }
+  return node;
+}
+
 export default function () {
   const lines = shopify.lines.current;
   const currencyCode = getCurrencyCode();
@@ -51,37 +74,58 @@ export default function () {
   );
   if (subscriptionLines.length === 0) return;
 
-  const wrapper = document.createElement("s-box");
-  wrapper.setAttribute("padding", "tight none");
-
+  const wrapper = el("s-box", { padding: "extraTight none" });
   document.body.appendChild(wrapper);
 
   (async () => {
     try {
       let monthlyTotal = 0;
+      const planNames = [];
+
       for (const line of subscriptionLines) {
         const productId = line.merchandise?.product?.id;
         const raw = await fetchMonthlyPrice(productId);
         if (raw) {
           monthlyTotal += parseMoneyValue(raw) * (line.quantity || 1);
         }
+        const title = line.merchandise?.title || line.merchandise?.product?.title;
+        if (title) planNames.push(title);
       }
+
       if (monthlyTotal > 0) {
-        const row = document.createElement("s-box");
-        row.setAttribute("display", "flex");
-        row.setAttribute("justify-content", "space-between");
-        row.setAttribute("padding", "tight none");
+        wrapper.appendChild(el("s-divider"));
 
-        const label = document.createElement("s-text");
-        label.textContent = "Monthly subscription";
-        row.appendChild(label);
+        const row = el("s-box", {
+          display: "flex",
+          "justify-content": "space-between",
+          padding: "tight none",
+        });
 
-        const value = document.createElement("s-text");
-        value.setAttribute("emphasis", "bold");
-        value.textContent = formatPrice(monthlyTotal, currencyCode) + " /mo";
-        row.appendChild(value);
+        row.appendChild(
+          el("s-text", {
+            size: "small",
+            textContent: "Monthly subscription",
+          }),
+        );
+
+        row.appendChild(
+          el("s-text", {
+            size: "small",
+            emphasis: "bold",
+            textContent: formatPrice(monthlyTotal, currencyCode) + " /mo",
+          }),
+        );
 
         wrapper.appendChild(row);
+
+        if (planNames.length > 0) {
+          const detail = el("s-text", {
+            size: "small",
+            appearance: "subdued",
+            textContent: planNames.join(", "),
+          });
+          wrapper.appendChild(detail);
+        }
       }
     } catch (e) {
       // Non-critical, fail silently
