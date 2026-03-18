@@ -25,127 +25,7 @@ async function flushAttributes() {
   }
 }
 
-function getCurrencyCode() {
-  const cost = shopify.cost?.current;
-  return cost?.totalAmount?.currencyCode || "CHF";
-}
 
-function formatPrice(amount, currencyCode) {
-  const num = typeof amount === "string" ? parseFloat(amount) : amount;
-  if (isNaN(num)) return "";
-  return new Intl.NumberFormat("de-CH", {
-    style: "currency",
-    currency: currencyCode || "CHF",
-  }).format(num);
-}
-
-function parseMoneyValue(raw) {
-  if (!raw) return 0;
-  const cleaned = String(raw).replace(/[^0-9.,]/g, "").replace(",", ".");
-  return parseFloat(cleaned) || 0;
-}
-
-async function fetchMonthlyPrice(productId) {
-  try {
-    const result = await shopify.query(
-      `query ProductMetafield($id: ID!) {
-        product(id: $id) {
-          metafield(namespace: "custom", key: "monthly_price") {
-            value
-            type
-          }
-        }
-      }`,
-      { variables: { id: productId } },
-    );
-    return result?.data?.product?.metafield?.value || null;
-  } catch (e) {
-    return null;
-  }
-}
-
-function renderPricingSummary(section) {
-  const lines = shopify.lines.current;
-  const currencyCode = getCurrencyCode();
-
-  const subscriptionLines = lines.filter(
-    (line) =>
-      line.merchandise?.product?.productType === MOBILE_SUBSCRIPTION_TYPE,
-  );
-  if (subscriptionLines.length === 0) return;
-
-  let oneTimeTotal = 0;
-  let hasOneTimeProduct = false;
-  for (const line of lines) {
-    const isSubscription =
-      line.merchandise?.product?.productType === MOBILE_SUBSCRIPTION_TYPE;
-    const linePrice = parseFloat(line.cost?.totalAmount?.amount || "0");
-    oneTimeTotal += linePrice;
-    if (!isSubscription) hasOneTimeProduct = true;
-  }
-
-  const summaryBox = document.createElement("s-box");
-  summaryBox.setAttribute("padding", "base");
-  summaryBox.setAttribute("border", "base");
-  summaryBox.setAttribute("border-radius", "base");
-
-  const summaryHeading = document.createElement("s-heading");
-  summaryHeading.textContent = "Price Summary";
-  summaryBox.appendChild(summaryHeading);
-
-  if (hasOneTimeProduct || oneTimeTotal > 0) {
-    const oneTimeRow = document.createElement("s-box");
-    oneTimeRow.setAttribute("display", "flex");
-    oneTimeRow.setAttribute("justify-content", "space-between");
-    oneTimeRow.setAttribute("padding", "tight");
-
-    const oneTimeLabel = document.createElement("s-text");
-    oneTimeLabel.textContent = "One-time payment (today)";
-    oneTimeRow.appendChild(oneTimeLabel);
-
-    const oneTimeValue = document.createElement("s-text");
-    oneTimeValue.setAttribute("emphasis", "bold");
-    oneTimeValue.textContent = formatPrice(oneTimeTotal, currencyCode);
-    oneTimeRow.appendChild(oneTimeValue);
-
-    summaryBox.appendChild(oneTimeRow);
-  }
-
-  section.appendChild(summaryBox);
-
-  (async () => {
-    try {
-      let monthlyTotal = 0;
-      for (const line of subscriptionLines) {
-        const productId = line.merchandise?.product?.id;
-        const raw = await fetchMonthlyPrice(productId);
-        if (raw) {
-          monthlyTotal += parseMoneyValue(raw) * (line.quantity || 1);
-        }
-      }
-      if (monthlyTotal > 0) {
-        const monthlyRow = document.createElement("s-box");
-        monthlyRow.setAttribute("display", "flex");
-        monthlyRow.setAttribute("justify-content", "space-between");
-        monthlyRow.setAttribute("padding", "tight");
-
-        const monthlyLabel = document.createElement("s-text");
-        monthlyLabel.textContent = "Monthly subscription";
-        monthlyRow.appendChild(monthlyLabel);
-
-        const monthlyValue = document.createElement("s-text");
-        monthlyValue.setAttribute("emphasis", "bold");
-        monthlyValue.textContent =
-          formatPrice(monthlyTotal, currencyCode) + " /mo";
-        monthlyRow.appendChild(monthlyValue);
-
-        summaryBox.appendChild(monthlyRow);
-      }
-    } catch (e) {
-      // Silently fail - pricing summary is non-critical
-    }
-  })();
-}
 
 export default function () {
   const lines = shopify.lines.current;
@@ -156,12 +36,6 @@ export default function () {
   if (!hasMobilePlan) return;
 
   const section = document.createElement("s-section");
-
-  try {
-    renderPricingSummary(section);
-  } catch (e) {
-    // Don't let pricing summary crash the whole extension
-  }
 
   const heading = document.createElement("s-heading");
   heading.textContent = "Mobile Plan Setup";

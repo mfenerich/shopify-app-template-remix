@@ -10,9 +10,9 @@ handle = "mobile-plan-onboarding"
 target = "purchase.checkout.block.render"
 module = "./src/Checkout.jsx"
 
-  [[extensions.targeting.metafields]]
-  namespace = "custom"
-  key = "monthly_price"
+[[extensions.targeting]]
+target = "purchase.checkout.reductions.render-after"
+module = "./src/PricingSummary.jsx"
 
 [extensions.capabilities]
 network_access = true
