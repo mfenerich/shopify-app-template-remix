@@ -1,0 +1,9 @@
+{
+  "name": "mobile-plan-onboarding",
+  "private": true,
+  "dependencies": {
+    "@shopify/ui-extensions": "~2026.1.0",
+    "preact": "^10.10.0",
+    "@preact/signals": "^2.3.0"
+  }
+}

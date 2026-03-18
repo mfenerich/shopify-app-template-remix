@@ -1,0 +1,16 @@
+api_version = "2026-01"
+
+[[extensions]]
+uid = "047f6bf8-a5f1-e462-0366-1698afe7d52039b67a60"
+type = "ui_extension"
+name = "Mobile Plan Onboarding"
+handle = "mobile-plan-onboarding"
+
+[[extensions.targeting]]
+target = "purchase.checkout.block.render"
+module = "./src/Checkout.jsx"
+
+[extensions.capabilities]
+network_access = true
+block_progress = true
+api_access = true
