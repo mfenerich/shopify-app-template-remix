@@ -1,8 +1,8 @@
 import "@shopify/ui-extensions/preact";
 
 import { el } from "./polarisDom.js";
-
-const MOBILE_SUBSCRIPTION_TYPE = "Mobile-subscription";
+import { mountOrderSummaryMonthlyPricing } from "./monthlyPricing.js";
+import { getSubscriptionLines } from "./subscriptionLines.js";
 const NUMBER_API_BASE_URL =
   "https://mock-phone-numbers-759347772663.europe-west6.run.app";
 
@@ -27,23 +27,20 @@ async function flushAttributes() {
   }
 }
 
-function isMobileSubscriptionLine(line) {
-  const pt = line.merchandise?.product?.productType?.trim() ?? "";
-  return (
-    pt === MOBILE_SUBSCRIPTION_TYPE ||
-    pt.toLowerCase() === "mobile-subscription"
-  );
-}
-
 export default function () {
   const lines = shopify.lines.current;
-  const subscriptionLines = lines.filter(isMobileSubscriptionLine);
+  const subscriptionLines = getSubscriptionLines(lines);
   const hasMobilePlan = subscriptionLines.length > 0;
   if (!hasMobilePlan) return;
 
   const section = el("s-section", { heading: "Mobile Plan Setup" });
 
   const stack = el("s-stack", { gap: "base" });
+
+  // Stable placement: show recurring monthly price at the top of the setup block.
+  const monthlyHost = el("s-stack", { gap: "small" });
+  stack.appendChild(monthlyHost);
+  mountOrderSummaryMonthlyPricing(monthlyHost, subscriptionLines);
 
   stack.appendChild(
     el("s-paragraph", {

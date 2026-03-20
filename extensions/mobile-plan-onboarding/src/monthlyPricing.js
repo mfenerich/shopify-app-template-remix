@@ -2,6 +2,7 @@
  * Monthly recurring price from product metafield custom.monthly_price (Storefront API).
  */
 import { el } from "./polarisDom.js";
+import { isMobileSubscriptionLine } from "./subscriptionLines.js";
 
 const STOREFRONT_VERSION = "2025-10";
 
@@ -237,6 +238,20 @@ export function mountOrderSummaryMonthlyPricing(container, subscriptionLines) {
             tone: "warning",
             heading: "Monthly price",
             textContent: anyError,
+          }),
+        );
+      } else if (
+        subscriptionLines.some(isMobileSubscriptionLine) &&
+        monthlyTotal <= 0 &&
+        !anyError
+      ) {
+        // Expected subscription product but metafield missing / zero
+        wrapper.appendChild(
+          el("s-banner", {
+            tone: "info",
+            heading: "Monthly price",
+            textContent:
+              "No monthly amount was found. Check product metafield custom.monthly_price (Money), Storefront API access on the definition, and that the product is published to Online Store.",
           }),
         );
       }

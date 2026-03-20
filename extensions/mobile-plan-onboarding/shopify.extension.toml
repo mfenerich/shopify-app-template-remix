@@ -10,10 +10,6 @@ handle = "mobile-plan-onboarding"
 target = "purchase.checkout.block.render"
 module = "./src/Checkout.jsx"
 
-[[extensions.targeting]]
-target = "purchase.checkout.reductions.render-after"
-module = "./src/OrderSummaryPricing.jsx"
-
 # Preload product metafields into checkout (also enables appMetafields for this key).
 [[extensions.metafields]]
 namespace = "custom"
