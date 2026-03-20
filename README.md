@@ -13,6 +13,11 @@ Rather than cloning this repo, you can use your preferred package manager and th
 
 Visit the [`shopify.dev` documentation](https://shopify.dev/docs/api/shopify-app-remix) for more details on the Remix app package.
 
+## This project (mobile checkout onboarding)
+
+- **Deployment & Shopify configuration:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- **Environment variables:** copy [`.env.example`](.env.example) to `.env` and fill in values.
+
 ## Quick start
 
 ### Prerequisites

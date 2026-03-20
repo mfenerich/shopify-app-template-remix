@@ -1,5 +1,7 @@
 import "@shopify/ui-extensions/preact";
 
+import { el } from "./polarisDom.js";
+
 const MOBILE_SUBSCRIPTION_TYPE = "Mobile-subscription";
 const NUMBER_API_BASE_URL =
   "https://mock-phone-numbers-759347772663.europe-west6.run.app";
@@ -25,37 +27,18 @@ async function flushAttributes() {
   }
 }
 
-function el(tag, attrs, children) {
-  const node = document.createElement(tag);
-  if (attrs) {
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === "textContent") {
-        node.textContent = v;
-      } else if (k in node) {
-        node[k] = v;
-      } else {
-        node.setAttribute(k, v);
-      }
-    }
-  }
-  if (children) {
-    for (const child of Array.isArray(children) ? children : [children]) {
-      if (typeof child === "string") {
-        node.appendChild(document.createTextNode(child));
-      } else if (child) {
-        node.appendChild(child);
-      }
-    }
-  }
-  return node;
+function isMobileSubscriptionLine(line) {
+  const pt = line.merchandise?.product?.productType?.trim() ?? "";
+  return (
+    pt === MOBILE_SUBSCRIPTION_TYPE ||
+    pt.toLowerCase() === "mobile-subscription"
+  );
 }
 
 export default function () {
   const lines = shopify.lines.current;
-  const hasMobilePlan = lines.some(
-    (line) =>
-      line.merchandise?.product?.productType === MOBILE_SUBSCRIPTION_TYPE,
-  );
+  const subscriptionLines = lines.filter(isMobileSubscriptionLine);
+  const hasMobilePlan = subscriptionLines.length > 0;
   if (!hasMobilePlan) return;
 
   const section = el("s-section", { heading: "Mobile Plan Setup" });

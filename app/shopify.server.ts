@@ -7,11 +7,18 @@ import {
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
 
+const scopesFromEnv = process.env.SCOPES?.split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
-  apiVersion: ApiVersion.January25,
-  scopes: process.env.SCOPES?.split(","),
+  apiVersion: ApiVersion.January26,
+  scopes:
+    scopesFromEnv && scopesFromEnv.length > 0
+      ? scopesFromEnv
+      : ["write_products"],
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
@@ -26,7 +33,7 @@ const shopify = shopifyApp({
 });
 
 export default shopify;
-export const apiVersion = ApiVersion.January25;
+export const apiVersion = ApiVersion.January26;
 export const addDocumentResponseHeaders = shopify.addDocumentResponseHeaders;
 export const authenticate = shopify.authenticate;
 export const unauthenticated = shopify.unauthenticated;

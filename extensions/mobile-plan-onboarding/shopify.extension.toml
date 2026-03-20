@@ -12,9 +12,13 @@ module = "./src/Checkout.jsx"
 
 [[extensions.targeting]]
 target = "purchase.checkout.reductions.render-after"
-module = "./src/PricingSummary.jsx"
+module = "./src/OrderSummaryPricing.jsx"
+
+# Preload product metafields into checkout (also enables appMetafields for this key).
+[[extensions.metafields]]
+namespace = "custom"
+key = "monthly_price"
 
 [extensions.capabilities]
 network_access = true
-block_progress = true
 api_access = true
