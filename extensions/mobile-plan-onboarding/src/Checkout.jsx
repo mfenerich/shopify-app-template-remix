@@ -77,7 +77,16 @@ function formatSwissPhoneNumber(value) {
   return parts.join(" ");
 }
 
-async function validateSubscriptionCart(subscriptionLines, bannerHost) {
+function renderPricingSummary(host) {
+  const currentPlans = getSubscriptionLines(shopify.lines.current);
+  if (currentPlans.length === 0) {
+    host.replaceChildren();
+    return;
+  }
+  mountOrderSummaryMonthlyPricing(host, currentPlans);
+}
+
+async function validateSubscriptionCart(subscriptionLines, bannerHost, monthlyHost) {
   bannerHost.replaceChildren();
   const messages = [];
 
@@ -122,6 +131,8 @@ async function validateSubscriptionCart(subscriptionLines, bannerHost) {
       }
     }
 
+    renderPricingSummary(monthlyHost);
+
     if (messages.length > 0) {
       showBanner(
         bannerHost,
@@ -152,12 +163,17 @@ export default function () {
 
   const validationHost = el("s-stack", { gap: "small" });
   stack.appendChild(validationHost);
-  void validateSubscriptionCart(subscriptionLines, validationHost);
 
   // Stable placement: show recurring monthly price at the top of the setup block.
   const monthlyHost = el("s-stack", { gap: "small" });
   stack.appendChild(monthlyHost);
-  mountOrderSummaryMonthlyPricing(monthlyHost, subscriptionLines);
+  renderPricingSummary(monthlyHost);
+  void validateSubscriptionCart(subscriptionLines, validationHost, monthlyHost);
+
+  const linesSignal = shopify.lines;
+  if (linesSignal && typeof linesSignal.subscribe === "function") {
+    linesSignal.subscribe(() => renderPricingSummary(monthlyHost));
+  }
 
   stack.appendChild(
     el("s-paragraph", {
