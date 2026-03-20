@@ -62,6 +62,40 @@ function getComparablePlanPrice(plan) {
   return plan.monthlyPrice || 0;
 }
 
+/**
+ * Clicks on nested Polaris components often target inner shadow DOM nodes.
+ * Use `composedPath()` and stable ids (not only `path.includes(node)` — remote
+ * DOM can make host references not match path entries).
+ */
+function pathIndexOfId(path, id) {
+  if (!id || !path?.length) return -1;
+  for (let i = 0; i < path.length; i++) {
+    const n = path[i];
+    if (n && n.id === id) return i;
+  }
+  return -1;
+}
+
+function pathIndexOfNode(path, node) {
+  if (!node || !path?.length) return -1;
+  const idx = path.indexOf(node);
+  if (idx !== -1) return idx;
+  const id = node.id;
+  return id ? pathIndexOfId(path, id) : -1;
+}
+
+/** Prefer the card closest to the event target (smaller path index). */
+function resolvePortChoiceFromEvent(event, yesNode, noNode) {
+  const path =
+    typeof event.composedPath === "function" ? event.composedPath() : [];
+  const yi = pathIndexOfNode(path, yesNode);
+  const ni = pathIndexOfNode(path, noNode);
+  if (yi === -1 && ni === -1) return null;
+  if (yi !== -1 && ni !== -1) return yi <= ni ? "yes" : "no";
+  if (yi !== -1) return "yes";
+  return "no";
+}
+
 function formatSwissPhoneNumber(value) {
   let digits = String(value || "").replace(/\D/g, "");
 
@@ -82,6 +116,20 @@ function formatSwissPhoneNumber(value) {
   if (digits.length > 5) parts.push(digits.slice(5, Math.min(7, digits.length)));
   if (digits.length > 7) parts.push(digits.slice(7, Math.min(9, digits.length)));
   return parts.join(" ");
+}
+
+/**
+ * Checkout UI extensions only reliably support Polaris `s-*` components.
+ * Plain HTML (`div`) can prevent the extension from rendering.
+ */
+function applyChoiceCardAppearance(card, selected) {
+  if (!card) return;
+  card.background = selected ? "subdued" : "base";
+  // Border sizes must use Polaris keywords (not arbitrary CSS).
+  card.border = selected ? "large base solid" : "large-200 base solid";
+  card.borderRadius = "large";
+  card.padding = "base";
+  card.minBlockSize = "large-200";
 }
 
 function getValidationErrors() {
@@ -109,6 +157,12 @@ function getValidationErrors() {
   }
 
   return errors;
+}
+
+/** One string for a single in-section banner (avoid multiple checkout toasts). */
+function formatValidationBannerText(errors) {
+  if (!errors?.length) return "";
+  return errors.join(" · ");
 }
 
 function renderPricingSummary(host) {
@@ -195,6 +249,11 @@ export default function () {
 
   const stack = el("s-stack", { gap: "base" });
 
+  const formValidationHost = el("s-stack", { gap: "small" });
+  // First in this section: in-block validation only (no `errors` on intercept — that
+  // triggers separate page-level toasts).
+  stack.appendChild(formValidationHost);
+
   const cartValidationHost = el("s-stack", { gap: "small" });
   stack.appendChild(cartValidationHost);
 
@@ -209,9 +268,6 @@ export default function () {
     linesSignal.subscribe(() => renderPricingSummary(monthlyHost));
   }
 
-  const formValidationHost = el("s-stack", { gap: "small" });
-  stack.appendChild(formValidationHost);
-
   if (shopify.buyerJourney?.intercept) {
     void shopify.buyerJourney.intercept(({ canBlockProgress }) => {
       const errors = getValidationErrors();
@@ -219,13 +275,17 @@ export default function () {
         return {
           behavior: "block",
           reason: "InvalidExtensionState",
-          perform: (result) => {
-            if (result.behavior === "block") {
+          perform: () => {
+            // `perform` runs after *all* interceptors finish. `result.behavior` is an
+            // aggregate outcome and can be `'allow'` even when this extension blocked,
+            // which would incorrectly skip the banner. Re-read validation and show.
+            const currentErrors = getValidationErrors();
+            if (currentErrors.length > 0) {
               showBanner(
                 formValidationHost,
                 "critical",
                 "Complete mobile plan setup",
-                errors.join(" "),
+                formatValidationBannerText(currentErrors),
               );
             } else {
               formValidationHost.replaceChildren();
@@ -250,30 +310,100 @@ export default function () {
     }),
   );
 
-  const choiceList = el("s-choice-list", {
-    label: "Port your number?",
+  stack.appendChild(
+    el("s-text", {
+      type: "strong",
+      textContent: "Port your number?",
+    }),
+  );
+
+  // `minmax(0, 1fr)` + `minInlineSize: 0` on items prevents the first column
+  // from swallowing hits (classic grid min-width:auto overflow).
+  const choiceGrid = el("s-grid", {
+    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+    gap: "base",
+    inlineSize: "100%",
   });
-  choiceList.appendChild(
-    el("s-choice", { id: "yes", value: "yes", textContent: "Yes" }),
+
+  // Use s-clickable (not s-stack): layout stacks are not reliably activatable in
+  // checkout; clickable wraps content and wires pointer + keyboard activation.
+  const yesOption = el("s-clickable", {
+    type: "button",
+    id: "mobile-plan-choice-yes",
+    accessibilityLabel: "Port your existing number",
+    inlineSize: "100%",
+    maxInlineSize: "100%",
+  });
+  applyChoiceCardAppearance(yesOption, false);
+  const yesInner = el("s-stack", { direction: "block", gap: "small" });
+  yesInner.appendChild(
+    el("s-text", {
+      type: "strong",
+      textContent: "Yes",
+    }),
   );
-  choiceList.appendChild(
-    el("s-choice", { id: "no", value: "no", textContent: "No" }),
+  yesInner.appendChild(
+    el("s-paragraph", {
+      color: "subdued",
+      textContent: "Keep your current number and let Revendo port it.",
+    }),
   );
-  stack.appendChild(choiceList);
+  yesOption.appendChild(yesInner);
+
+  const noOption = el("s-clickable", {
+    type: "button",
+    id: "mobile-plan-choice-no",
+    accessibilityLabel: "Choose a new Swiss number",
+    inlineSize: "100%",
+    maxInlineSize: "100%",
+  });
+  applyChoiceCardAppearance(noOption, false);
+  const noInner = el("s-stack", { direction: "block", gap: "small" });
+  noInner.appendChild(
+    el("s-text", {
+      type: "strong",
+      textContent: "No",
+    }),
+  );
+  noInner.appendChild(
+    el("s-paragraph", {
+      color: "subdued",
+      textContent: "Choose a brand new Swiss mobile number.",
+    }),
+  );
+  noOption.appendChild(noInner);
+
+  const yesCell = el("s-grid-item", {
+    minInlineSize: "0",
+    overflow: "hidden",
+  });
+  yesCell.appendChild(yesOption);
+  const noCell = el("s-grid-item", {
+    minInlineSize: "0",
+    overflow: "hidden",
+  });
+  noCell.appendChild(noOption);
+  choiceGrid.appendChild(yesCell);
+  choiceGrid.appendChild(noCell);
+  stack.appendChild(choiceGrid);
 
   const dynamicArea = el("s-stack", { gap: "base" });
   stack.appendChild(dynamicArea);
 
-  choiceList.addEventListener("change", (e) => {
-    const values = e.target.values || [];
-    const value = Array.isArray(values) ? values[0] : values;
-    dynamicArea.innerHTML = "";
+  function updateChoiceButtons() {
+    applyChoiceCardAppearance(yesOption, formState.choice === "yes");
+    applyChoiceCardAppearance(noOption, formState.choice === "no");
+  }
+
+  function handleChoiceChange(value) {
+    dynamicArea.replaceChildren();
     formValidationHost.replaceChildren();
     formState.choice = value || "";
     formState.portNumber = "";
     formState.termination = "";
     formState.portConsent = false;
     formState.selectedNumberId = "";
+    updateChoiceButtons();
 
     queueAttributeChange("mobile_number_choice", value === "yes" ? "port" : "new");
 
@@ -281,6 +411,16 @@ export default function () {
       renderPortFields(dynamicArea);
     } else if (value === "no") {
       renderNewNumberFields(dynamicArea);
+    }
+  }
+
+  // Delegate with path tie-break: YES checked first used to steal NO hits when
+  // the grid overflowed; `resolvePortChoiceFromEvent` picks the innermost card.
+  choiceGrid.addEventListener("click", (e) => {
+    const choice = resolvePortChoiceFromEvent(e, yesOption, noOption);
+    if (choice) {
+      e.preventDefault();
+      handleChoiceChange(choice);
     }
   });
 
@@ -411,7 +551,7 @@ async function renderNewNumberFields(container) {
         textContent: "Try again",
       });
       retryBtn.addEventListener("click", () => {
-        container.innerHTML = "";
+        container.replaceChildren();
         renderNewNumberFields(container);
       });
       stack.appendChild(retryBtn);
@@ -467,7 +607,7 @@ async function renderNewNumberFields(container) {
       textContent: "Retry",
     });
     retryBtn.addEventListener("click", () => {
-      container.innerHTML = "";
+      container.replaceChildren();
       renderNewNumberFields(container);
     });
     stack.appendChild(retryBtn);
