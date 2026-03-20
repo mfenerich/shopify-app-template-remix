@@ -55,6 +55,28 @@ function getComparablePlanPrice(plan) {
   return plan.monthlyPrice > 0 ? plan.monthlyPrice : plan.oneTimePrice;
 }
 
+function formatSwissPhoneNumber(value) {
+  let digits = String(value || "").replace(/\D/g, "");
+
+  if (digits.startsWith("0041")) {
+    digits = `41${digits.slice(4)}`;
+  }
+  if (digits.startsWith("41")) {
+    digits = digits.slice(2);
+  }
+  if (digits.startsWith("0")) {
+    digits = digits.slice(1);
+  }
+  digits = digits.slice(0, 9);
+
+  const parts = ["+41"];
+  if (digits.length > 0) parts.push(digits.slice(0, Math.min(2, digits.length)));
+  if (digits.length > 2) parts.push(digits.slice(2, Math.min(5, digits.length)));
+  if (digits.length > 5) parts.push(digits.slice(5, Math.min(7, digits.length)));
+  if (digits.length > 7) parts.push(digits.slice(7, Math.min(9, digits.length)));
+  return parts.join(" ");
+}
+
 async function validateSubscriptionCart(subscriptionLines, bannerHost) {
   bannerHost.replaceChildren();
   const messages = [];
@@ -193,10 +215,13 @@ function renderPortFields(container) {
     label: "What's your number",
     required: "",
     placeholder: "+41 7x xxx xx xx",
+    value: "+41 ",
+    maxLength: 16,
   });
   phoneField.addEventListener("input", (e) => {
-    const val = e.target.value || "";
-    if (val) queueAttributeChange("mobile_port_number", val);
+    const masked = formatSwissPhoneNumber(e.target.value || "");
+    e.target.value = masked;
+    if (masked !== "+41") queueAttributeChange("mobile_port_number", masked);
   });
   stack.appendChild(phoneField);
 
