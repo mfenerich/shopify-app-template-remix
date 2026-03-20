@@ -219,13 +219,17 @@ export default function () {
         return {
           behavior: "block",
           reason: "InvalidExtensionState",
-          perform: () => {
-            showBanner(
-              formValidationHost,
-              "critical",
-              "Complete mobile plan setup",
-              errors.join(" "),
-            );
+          perform: (result) => {
+            if (result.behavior === "block") {
+              showBanner(
+                formValidationHost,
+                "critical",
+                "Complete mobile plan setup",
+                errors.join(" "),
+              );
+            } else {
+              formValidationHost.replaceChildren();
+            }
           },
         };
       }
@@ -298,7 +302,6 @@ function renderPortFields(container) {
 
   const phoneField = el("s-text-field", {
     label: "What's your number",
-    required: "",
     placeholder: "+41 7x xxx xx xx",
     value: "+41 ",
     maxLength: 16,
@@ -313,7 +316,6 @@ function renderPortFields(container) {
 
   const terminationSelect = el("s-select", {
     label: "Termination",
-    required: "",
   });
   terminationSelect.appendChild(
     el("s-option", {
@@ -418,7 +420,6 @@ async function renderNewNumberFields(container) {
 
     const select = el("s-select", {
       label: "Select number",
-      required: "",
     });
     select.appendChild(
       el("s-option", { value: "", disabled: "", textContent: "Select a number" }),
