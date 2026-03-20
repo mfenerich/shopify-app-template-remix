@@ -36,6 +36,11 @@ function getCurrencyCode() {
   return cost?.totalAmount?.currencyCode || "CHF";
 }
 
+function getOneTimePrice(line) {
+  const amount = line?.cost?.totalAmount?.amount;
+  return typeof amount === "string" ? parseFloat(amount) || 0 : amount || 0;
+}
+
 function productIdMatchesTarget(productGid, target) {
   if (!productGid || !target || target.type !== "product") return false;
   if (target.id === productGid) return true;
@@ -160,23 +165,46 @@ async function resolveMonthlyRaw(productId, variantId) {
  * Aggregates monthly total and plan titles for subscription lines.
  */
 export async function getMonthlyPricingDetails(subscriptionLines) {
+  const pricing = await getSubscriptionPricingDetails(subscriptionLines);
+  return {
+    monthlyTotal: pricing.monthlyTotal,
+    planNames: pricing.planNames,
+    anyError: pricing.anyError,
+  };
+}
+
+/**
+ * Aggregates recurring and one-time totals plus per-line pricing.
+ */
+export async function getSubscriptionPricingDetails(subscriptionLines) {
   let monthlyTotal = 0;
+  let oneTimeTotal = 0;
   const planNames = [];
   let anyError = null;
+  const plans = [];
 
   for (const line of subscriptionLines) {
     const productId = line.merchandise?.product?.id;
     const variantId = line.merchandise?.id;
     const { value: raw, error } = await resolveMonthlyRaw(productId, variantId);
     if (error) anyError = error;
+    const monthlyPrice = raw ? parseMoneyValue(raw) * (line.quantity || 1) : 0;
+    const oneTimePrice = getOneTimePrice(line);
     if (raw) {
-      monthlyTotal += parseMoneyValue(raw) * (line.quantity || 1);
+      monthlyTotal += monthlyPrice;
     }
+    oneTimeTotal += oneTimePrice;
     const title = line.merchandise?.title || line.merchandise?.product?.title;
     if (title) planNames.push(title);
+    plans.push({
+      line,
+      title: title || "Mobile plan",
+      monthlyPrice,
+      oneTimePrice,
+    });
   }
 
-  return { monthlyTotal, planNames, anyError };
+  return { monthlyTotal, oneTimeTotal, planNames, anyError, plans };
 }
 
 /**
@@ -202,12 +230,27 @@ export function mountOrderSummaryMonthlyPricing(container, subscriptionLines) {
 
   (async () => {
     try {
-      const { monthlyTotal, planNames, anyError } =
-        await getMonthlyPricingDetails(subscriptionLines);
+      const { monthlyTotal, oneTimeTotal, planNames, anyError } =
+        await getSubscriptionPricingDetails(subscriptionLines);
       loading.remove();
 
-      if (monthlyTotal > 0) {
+      if (monthlyTotal > 0 || oneTimeTotal > 0) {
         wrapper.appendChild(el("s-divider"));
+        const oneTimeRow = el("s-stack", {
+          direction: "inline",
+          justifyContent: "space-between",
+          inlineSize: "100%",
+        });
+        oneTimeRow.appendChild(
+          el("s-text", { textContent: "One-time fees today" }),
+        );
+        oneTimeRow.appendChild(
+          el("s-text", {
+            textContent: formatPrice(oneTimeTotal, currencyCode),
+          }),
+        );
+        wrapper.appendChild(oneTimeRow);
+
         const row = el("s-stack", {
           direction: "inline",
           justifyContent: "space-between",

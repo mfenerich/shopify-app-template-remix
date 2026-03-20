@@ -1,7 +1,10 @@
 import "@shopify/ui-extensions/preact";
 
 import { el } from "./polarisDom.js";
-import { mountOrderSummaryMonthlyPricing } from "./monthlyPricing.js";
+import {
+  getSubscriptionPricingDetails,
+  mountOrderSummaryMonthlyPricing,
+} from "./monthlyPricing.js";
 import { getSubscriptionLines } from "./subscriptionLines.js";
 const NUMBER_API_BASE_URL =
   "https://mock-phone-numbers-759347772663.europe-west6.run.app";
@@ -27,6 +30,94 @@ async function flushAttributes() {
   }
 }
 
+function getPlanTitle(line) {
+  return line.merchandise?.product?.title || line.merchandise?.title || "Mobile plan";
+}
+
+function showBanner(container, tone, heading, textContent) {
+  container.replaceChildren(
+    el("s-banner", {
+      tone,
+      heading,
+      textContent,
+    }),
+  );
+}
+
+async function applyCartLineChange(change) {
+  const result = await shopify.applyCartLinesChange(change);
+  if (result?.type === "error") {
+    throw new Error(result.message || "Unable to update mobile plans.");
+  }
+}
+
+function getComparablePlanPrice(plan) {
+  return plan.monthlyPrice > 0 ? plan.monthlyPrice : plan.oneTimePrice;
+}
+
+async function validateSubscriptionCart(subscriptionLines, bannerHost) {
+  bannerHost.replaceChildren();
+  const messages = [];
+
+  try {
+    for (const line of subscriptionLines) {
+      if ((line.quantity || 1) > 1) {
+        await applyCartLineChange({
+          type: "updateCartLine",
+          id: line.id,
+          quantity: 1,
+        });
+        messages.push(`Reduced "${getPlanTitle(line)}" to quantity 1.`);
+      }
+    }
+
+    const currentPlans = getSubscriptionLines(shopify.lines.current);
+    if (currentPlans.length > 1) {
+      const { plans } = await getSubscriptionPricingDetails(currentPlans);
+      const rankedPlans = [...plans].sort(
+        (a, b) => getComparablePlanPrice(a) - getComparablePlanPrice(b),
+      );
+      const keepPlan = rankedPlans[rankedPlans.length - 1];
+      const removePlans = rankedPlans.slice(0, -1);
+
+      for (const plan of removePlans) {
+        const refreshedLine = getSubscriptionLines(shopify.lines.current).find(
+          (line) => line.merchandise?.id === plan.line.merchandise?.id,
+        );
+        if (!refreshedLine) continue;
+        await applyCartLineChange({
+          type: "removeCartLine",
+          id: refreshedLine.id,
+          quantity: refreshedLine.quantity || 1,
+        });
+      }
+
+      if (removePlans.length > 0) {
+        const removedTitles = removePlans.map((plan) => `"${plan.title}"`).join(", ");
+        messages.push(
+          `Only one mobile plan is allowed. Kept "${keepPlan.title}" and removed ${removedTitles}.`,
+        );
+      }
+    }
+
+    if (messages.length > 0) {
+      showBanner(
+        bannerHost,
+        "info",
+        "Mobile plan updated",
+        messages.join(" "),
+      );
+    }
+  } catch (error) {
+    showBanner(
+      bannerHost,
+      "warning",
+      "Mobile plan validation",
+      String(error?.message || error),
+    );
+  }
+}
+
 export default function () {
   const lines = shopify.lines.current;
   const subscriptionLines = getSubscriptionLines(lines);
@@ -36,6 +127,10 @@ export default function () {
   const section = el("s-section", { heading: "Mobile Plan Setup" });
 
   const stack = el("s-stack", { gap: "base" });
+
+  const validationHost = el("s-stack", { gap: "small" });
+  stack.appendChild(validationHost);
+  void validateSubscriptionCart(subscriptionLines, validationHost);
 
   // Stable placement: show recurring monthly price at the top of the setup block.
   const monthlyHost = el("s-stack", { gap: "small" });
@@ -51,13 +146,13 @@ export default function () {
   );
 
   const choiceList = el("s-choice-list", {
-    label: "How would you like to get your phone number?",
+    label: "Port your number?",
   });
   choiceList.appendChild(
-    el("s-choice", { id: "port", value: "port", textContent: "Keep my existing number" }),
+    el("s-choice", { id: "yes", value: "yes", textContent: "Yes" }),
   );
   choiceList.appendChild(
-    el("s-choice", { id: "new", value: "new", textContent: "Get a new number" }),
+    el("s-choice", { id: "no", value: "no", textContent: "No" }),
   );
   stack.appendChild(choiceList);
 
@@ -69,11 +164,11 @@ export default function () {
     const value = Array.isArray(values) ? values[0] : values;
     dynamicArea.innerHTML = "";
 
-    queueAttributeChange("mobile_number_choice", value || "");
+    queueAttributeChange("mobile_number_choice", value === "yes" ? "port" : "new");
 
-    if (value === "port") {
+    if (value === "yes") {
       renderPortFields(dynamicArea);
-    } else if (value === "new") {
+    } else if (value === "no") {
       renderNewNumberFields(dynamicArea);
     }
   });
@@ -95,7 +190,7 @@ function renderPortFields(container) {
   );
 
   const phoneField = el("s-text-field", {
-    label: "Phone number to port",
+    label: "What's your number",
     required: "",
     placeholder: "+41 7x xxx xx xx",
   });
@@ -105,22 +200,38 @@ function renderPortFields(container) {
   });
   stack.appendChild(phoneField);
 
-  const carrierField = el("s-text-field", {
-    label: "Current carrier",
+  const terminationSelect = el("s-select", {
+    label: "Termination",
     required: "",
-    placeholder: "e.g. Swisscom, Sunrise, Salt",
   });
-  carrierField.addEventListener("input", (e) => {
+  terminationSelect.appendChild(
+    el("s-option", {
+      value: "",
+      disabled: "",
+      textContent: "Select termination timing",
+    }),
+  );
+  terminationSelect.appendChild(
+    el("s-option", {
+      value: "asap",
+      textContent: "As soon as possible",
+    }),
+  );
+  terminationSelect.appendChild(
+    el("s-option", {
+      value: "end_of_contract",
+      textContent: "By the end of the contract",
+    }),
+  );
+  terminationSelect.addEventListener("change", (e) => {
     const val = e.target.value || "";
-    if (val) queueAttributeChange("mobile_current_carrier", val);
+    if (val) queueAttributeChange("mobile_port_termination", val);
   });
-  stack.appendChild(carrierField);
+  stack.appendChild(terminationSelect);
 
   const consentCheckbox = el("s-checkbox", {
     id: "port-consent",
-    label:
-      "I authorize the transfer of my phone number to the new provider. " +
-      "I understand that my current contract may be affected.",
+    label: "Allow Revendo to port your number (POW)",
   });
   consentCheckbox.addEventListener("change", (e) => {
     const checked = e.target.checked ? "true" : "false";
@@ -191,7 +302,7 @@ async function renderNewNumberFields(container) {
     }
 
     const select = el("s-select", {
-      label: "Choose your new phone number",
+      label: "Select number",
       required: "",
     });
     select.appendChild(
