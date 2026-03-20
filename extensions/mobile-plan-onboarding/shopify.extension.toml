@@ -18,3 +18,4 @@ key = "monthly_price"
 [extensions.capabilities]
 network_access = true
 api_access = true
+block_progress = true

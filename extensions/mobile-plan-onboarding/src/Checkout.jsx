@@ -11,6 +11,13 @@ const NUMBER_API_BASE_URL =
 
 const pendingAttributes = {};
 let saveTimer = null;
+const formState = {
+  choice: "",
+  portNumber: "",
+  termination: "",
+  portConsent: false,
+  selectedNumberId: "",
+};
 
 function queueAttributeChange(key, value) {
   pendingAttributes[key] = value;
@@ -75,6 +82,33 @@ function formatSwissPhoneNumber(value) {
   if (digits.length > 5) parts.push(digits.slice(5, Math.min(7, digits.length)));
   if (digits.length > 7) parts.push(digits.slice(7, Math.min(9, digits.length)));
   return parts.join(" ");
+}
+
+function getValidationErrors() {
+  const errors = [];
+
+  if (!formState.choice) {
+    errors.push("Choose whether you want to port your number or select a new number.");
+    return errors;
+  }
+
+  if (formState.choice === "yes") {
+    if (formState.portNumber.length < 16) {
+      errors.push("Enter your Swiss phone number.");
+    }
+    if (!formState.termination) {
+      errors.push("Choose a termination option.");
+    }
+    if (!formState.portConsent) {
+      errors.push("Allow Revendo to port your number (POW).");
+    }
+  }
+
+  if (formState.choice === "no" && !formState.selectedNumberId) {
+    errors.push("Select a new phone number.");
+  }
+
+  return errors;
 }
 
 function renderPricingSummary(host) {
@@ -161,18 +195,47 @@ export default function () {
 
   const stack = el("s-stack", { gap: "base" });
 
-  const validationHost = el("s-stack", { gap: "small" });
-  stack.appendChild(validationHost);
+  const cartValidationHost = el("s-stack", { gap: "small" });
+  stack.appendChild(cartValidationHost);
 
   // Stable placement: show recurring monthly price at the top of the setup block.
   const monthlyHost = el("s-stack", { gap: "small" });
   stack.appendChild(monthlyHost);
   renderPricingSummary(monthlyHost);
-  void validateSubscriptionCart(subscriptionLines, validationHost, monthlyHost);
+  void validateSubscriptionCart(subscriptionLines, cartValidationHost, monthlyHost);
 
   const linesSignal = shopify.lines;
   if (linesSignal && typeof linesSignal.subscribe === "function") {
     linesSignal.subscribe(() => renderPricingSummary(monthlyHost));
+  }
+
+  const formValidationHost = el("s-stack", { gap: "small" });
+  stack.appendChild(formValidationHost);
+
+  if (shopify.buyerJourney?.intercept) {
+    void shopify.buyerJourney.intercept(({ canBlockProgress }) => {
+      const errors = getValidationErrors();
+      if (canBlockProgress && errors.length > 0) {
+        return {
+          behavior: "block",
+          reason: "InvalidExtensionState",
+          perform: () => {
+            showBanner(
+              formValidationHost,
+              "critical",
+              "Complete mobile plan setup",
+              errors.join(" "),
+            );
+          },
+        };
+      }
+      return {
+        behavior: "allow",
+        perform: () => {
+          formValidationHost.replaceChildren();
+        },
+      };
+    });
   }
 
   stack.appendChild(
@@ -201,6 +264,12 @@ export default function () {
     const values = e.target.values || [];
     const value = Array.isArray(values) ? values[0] : values;
     dynamicArea.innerHTML = "";
+    formValidationHost.replaceChildren();
+    formState.choice = value || "";
+    formState.portNumber = "";
+    formState.termination = "";
+    formState.portConsent = false;
+    formState.selectedNumberId = "";
 
     queueAttributeChange("mobile_number_choice", value === "yes" ? "port" : "new");
 
@@ -237,6 +306,7 @@ function renderPortFields(container) {
   phoneField.addEventListener("input", (e) => {
     const masked = formatSwissPhoneNumber(e.target.value || "");
     e.target.value = masked;
+    formState.portNumber = masked;
     if (masked !== "+41") queueAttributeChange("mobile_port_number", masked);
   });
   stack.appendChild(phoneField);
@@ -266,6 +336,7 @@ function renderPortFields(container) {
   );
   terminationSelect.addEventListener("change", (e) => {
     const val = e.target.value || "";
+    formState.termination = val;
     if (val) queueAttributeChange("mobile_port_termination", val);
   });
   stack.appendChild(terminationSelect);
@@ -275,12 +346,15 @@ function renderPortFields(container) {
     label: "Allow Revendo to port your number (POW)",
   });
   consentCheckbox.addEventListener("change", (e) => {
-    const checked = e.target.checked ? "true" : "false";
+    formState.portConsent = !!e.target.checked;
+    const checked = formState.portConsent ? "true" : "false";
     queueAttributeChange("mobile_port_consent", checked);
-    queueAttributeChange(
-      "mobile_port_consent_timestamp",
-      new Date().toISOString(),
-    );
+    if (formState.portConsent) {
+      queueAttributeChange(
+        "mobile_port_consent_timestamp",
+        new Date().toISOString(),
+      );
+    }
   });
   stack.appendChild(consentCheckbox);
 
@@ -359,6 +433,7 @@ async function renderNewNumberFields(container) {
 
     select.addEventListener("change", (e) => {
       const selectedId = e.target.value;
+      formState.selectedNumberId = selectedId;
       const numberObj = numbers.find((n) => n.id === selectedId);
       if (numberObj) {
         queueAttributeChange("mobile_selected_number", numberObj.number);
