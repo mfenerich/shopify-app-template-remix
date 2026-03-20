@@ -52,7 +52,7 @@ async function applyCartLineChange(change) {
 }
 
 function getComparablePlanPrice(plan) {
-  return plan.monthlyPrice > 0 ? plan.monthlyPrice : plan.oneTimePrice;
+  return plan.monthlyPrice || 0;
 }
 
 function formatSwissPhoneNumber(value) {
