@@ -104,15 +104,25 @@ function pathIndexOfNode(path, node) {
 }
 
 /** Prefer the card closest to the event target (smaller path index). */
-function resolvePortChoiceFromEvent(event, yesNode, noNode) {
+function resolveBinaryChoiceFromEvent(
+  event,
+  leftNode,
+  rightNode,
+  leftValue,
+  rightValue,
+) {
   const path =
     typeof event.composedPath === "function" ? event.composedPath() : [];
-  const yi = pathIndexOfNode(path, yesNode);
-  const ni = pathIndexOfNode(path, noNode);
-  if (yi === -1 && ni === -1) return null;
-  if (yi !== -1 && ni !== -1) return yi <= ni ? "yes" : "no";
-  if (yi !== -1) return "yes";
-  return "no";
+  const li = pathIndexOfNode(path, leftNode);
+  const ri = pathIndexOfNode(path, rightNode);
+  if (li === -1 && ri === -1) return null;
+  if (li !== -1 && ri !== -1) return li <= ri ? leftValue : rightValue;
+  if (li !== -1) return leftValue;
+  return rightValue;
+}
+
+function resolvePortChoiceFromEvent(event, yesNode, noNode) {
+  return resolveBinaryChoiceFromEvent(event, yesNode, noNode, "yes", "no");
 }
 
 function formatSwissPhoneNumber(value) {
@@ -495,6 +505,96 @@ export default function () {
   document.body.appendChild(section);
 }
 
+function mountTerminationSelector(stack) {
+  stack.appendChild(
+    el("s-text", {
+      type: "strong",
+      textContent: "Termination",
+    }),
+  );
+
+  const termGrid = el("s-grid", {
+    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+    gap: "base",
+    inlineSize: "100%",
+  });
+
+  const asapCard = el("s-clickable", {
+    type: "button",
+    id: "mobile-plan-termination-asap",
+    accessibilityLabel: "As soon as possible",
+    inlineSize: "100%",
+    maxInlineSize: "100%",
+  });
+  applyChoiceCardAppearance(asapCard, formState.termination === "asap");
+  const asapInner = el("s-stack", { direction: "block", gap: "small" });
+  asapInner.appendChild(
+    el("s-text", { type: "strong", textContent: "As soon as possible" }),
+  );
+  asapInner.appendChild(
+    el("s-paragraph", {
+      color: "subdued",
+      textContent: "Start the port as early as the process allows.",
+    }),
+  );
+  asapCard.appendChild(asapInner);
+
+  const eocCard = el("s-clickable", {
+    type: "button",
+    id: "mobile-plan-termination-eoc",
+    accessibilityLabel: "By the end of the contract",
+    inlineSize: "100%",
+    maxInlineSize: "100%",
+  });
+  applyChoiceCardAppearance(eocCard, formState.termination === "end_of_contract");
+  const eocInner = el("s-stack", { direction: "block", gap: "small" });
+  eocInner.appendChild(
+    el("s-text", { type: "strong", textContent: "End of contract" }),
+  );
+  eocInner.appendChild(
+    el("s-paragraph", {
+      color: "subdued",
+      textContent: "Align the port with your current contract end date.",
+    }),
+  );
+  eocCard.appendChild(eocInner);
+
+  const asapCell = el("s-grid-item", {
+    minInlineSize: "0",
+    overflow: "hidden",
+  });
+  asapCell.appendChild(asapCard);
+  const eocCell = el("s-grid-item", {
+    minInlineSize: "0",
+    overflow: "hidden",
+  });
+  eocCell.appendChild(eocCard);
+  termGrid.appendChild(asapCell);
+  termGrid.appendChild(eocCell);
+  stack.appendChild(termGrid);
+
+  function updateTerminationCards() {
+    applyChoiceCardAppearance(asapCard, formState.termination === "asap");
+    applyChoiceCardAppearance(eocCard, formState.termination === "end_of_contract");
+  }
+
+  termGrid.addEventListener("click", (e) => {
+    const picked = resolveBinaryChoiceFromEvent(
+      e,
+      asapCard,
+      eocCard,
+      "asap",
+      "end_of_contract",
+    );
+    if (!picked) return;
+    e.preventDefault();
+    touchFieldInteraction();
+    formState.termination = picked;
+    updateTerminationCards();
+    queueAttributeChange("mobile_port_termination", picked);
+  });
+}
+
 function renderPortFields(container) {
   const stack = el("s-stack", { gap: "base" });
 
@@ -522,35 +622,7 @@ function renderPortFields(container) {
   });
   stack.appendChild(phoneField);
 
-  const terminationSelect = el("s-select", {
-    label: "Termination",
-  });
-  terminationSelect.appendChild(
-    el("s-option", {
-      value: "",
-      disabled: "",
-      textContent: "Select termination timing",
-    }),
-  );
-  terminationSelect.appendChild(
-    el("s-option", {
-      value: "asap",
-      textContent: "As soon as possible",
-    }),
-  );
-  terminationSelect.appendChild(
-    el("s-option", {
-      value: "end_of_contract",
-      textContent: "By the end of the contract",
-    }),
-  );
-  terminationSelect.addEventListener("change", (e) => {
-    touchFieldInteraction();
-    const val = e.target.value || "";
-    formState.termination = val;
-    if (val) queueAttributeChange("mobile_port_termination", val);
-  });
-  stack.appendChild(terminationSelect);
+  mountTerminationSelector(stack);
 
   const consentCheckbox = el("s-checkbox", {
     id: "port-consent",
