@@ -19,6 +19,25 @@ const formState = {
   selectedNumberId: "",
 };
 
+/**
+ * Intercept runs again as soon as the buyer changes our UI (e.g. taps Yes/No),
+ * not only on Pay — so we suppress the *banner* briefly after local edits.
+ * Checkout can still be blocked when invalid; this matches “red only on submit”.
+ */
+let suppressValidationBannerUntilMs = 0;
+
+function touchChoiceInteraction() {
+  suppressValidationBannerUntilMs = Date.now() + 4500;
+}
+
+function touchFieldInteraction() {
+  suppressValidationBannerUntilMs = Date.now() + 900;
+}
+
+function shouldShowValidationBannerInPerform() {
+  return Date.now() >= suppressValidationBannerUntilMs;
+}
+
 function queueAttributeChange(key, value) {
   pendingAttributes[key] = value;
   clearTimeout(saveTimer);
@@ -165,6 +184,36 @@ function formatValidationBannerText(errors) {
   return errors.join(" · ");
 }
 
+function getBuyerJourneyStepHandle() {
+  return shopify.buyerJourney?.activeStep?.current?.handle;
+}
+
+/**
+ * `buyerJourney.intercept` runs on many progress evaluations (address edits,
+ * re-validation, etc.), not only on Pay — especially on one-page checkout.
+ * Defer blocking until it looks like a real submit attempt.
+ */
+function shouldDeferMobilePlanValidation(interceptRun, stepHandle) {
+  if (
+    stepHandle === "information" ||
+    stepHandle === "shipping" ||
+    stepHandle === "cart"
+  ) {
+    return true;
+  }
+  // Single-page checkout: `handle` stays `checkout`; first evaluation is often
+  // before the buyer tries to complete the order.
+  if (
+    interceptRun === 1 &&
+    (stepHandle === "checkout" ||
+      stepHandle === "unknown" ||
+      stepHandle == null)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function renderPricingSummary(host) {
   const currentPlans = getSubscriptionLines(shopify.lines.current);
   if (currentPlans.length === 0) {
@@ -269,8 +318,21 @@ export default function () {
   }
 
   if (shopify.buyerJourney?.intercept) {
+    let buyerJourneyInterceptRun = 0;
     void shopify.buyerJourney.intercept(({ canBlockProgress }) => {
+      buyerJourneyInterceptRun += 1;
+      const stepHandle = getBuyerJourneyStepHandle();
       const errors = getValidationErrors();
+
+      if (
+        shouldDeferMobilePlanValidation(buyerJourneyInterceptRun, stepHandle)
+      ) {
+        return {
+          behavior: "allow",
+          perform: () => {},
+        };
+      }
+
       if (canBlockProgress && errors.length > 0) {
         return {
           behavior: "block",
@@ -281,6 +343,10 @@ export default function () {
             // which would incorrectly skip the banner. Re-read validation and show.
             const currentErrors = getValidationErrors();
             if (currentErrors.length > 0) {
+              if (!shouldShowValidationBannerInPerform()) {
+                formValidationHost.replaceChildren();
+                return;
+              }
               showBanner(
                 formValidationHost,
                 "critical",
@@ -396,6 +462,7 @@ export default function () {
   }
 
   function handleChoiceChange(value) {
+    touchChoiceInteraction();
     dynamicArea.replaceChildren();
     formValidationHost.replaceChildren();
     formState.choice = value || "";
@@ -447,6 +514,7 @@ function renderPortFields(container) {
     maxLength: 16,
   });
   phoneField.addEventListener("input", (e) => {
+    touchFieldInteraction();
     const masked = formatSwissPhoneNumber(e.target.value || "");
     e.target.value = masked;
     formState.portNumber = masked;
@@ -477,6 +545,7 @@ function renderPortFields(container) {
     }),
   );
   terminationSelect.addEventListener("change", (e) => {
+    touchFieldInteraction();
     const val = e.target.value || "";
     formState.termination = val;
     if (val) queueAttributeChange("mobile_port_termination", val);
@@ -488,6 +557,7 @@ function renderPortFields(container) {
     label: "Allow Revendo to port your number (POW)",
   });
   consentCheckbox.addEventListener("change", (e) => {
+    touchFieldInteraction();
     formState.portConsent = !!e.target.checked;
     const checked = formState.portConsent ? "true" : "false";
     queueAttributeChange("mobile_port_consent", checked);
@@ -573,6 +643,7 @@ async function renderNewNumberFields(container) {
     let confirmBanner = null;
 
     select.addEventListener("change", (e) => {
+      touchFieldInteraction();
       const selectedId = e.target.value;
       formState.selectedNumberId = selectedId;
       const numberObj = numbers.find((n) => n.id === selectedId);
