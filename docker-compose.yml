@@ -1,0 +1,50 @@
+# On-prem / staging: TLS via nginx + shared Let's Encrypt volume (certbot-central).
+# See docs/DOCKER.md and your internal wiki: infrastructure/ssl-certificates.md
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      # Persistent SQLite on volume app-data (do not use ./dev.sqlite from laptop .env here).
+      DATABASE_URL: file:/data/prod.sqlite
+      SHOPIFY_APP_URL: ${SHOPIFY_APP_URL}
+      SHOPIFY_API_KEY: ${SHOPIFY_API_KEY}
+      SHOPIFY_API_SECRET: ${SHOPIFY_API_SECRET}
+      SCOPES: ${SCOPES:-write_products}
+    volumes:
+      - app-data:/data
+    expose:
+      - "3000"
+    healthcheck:
+      test:
+        ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  nginx:
+    image: nginx:alpine
+    container_name: poc-nextphone-onboarding-nginx
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTP_PORT:-80}:80"
+    environment:
+      APP_HOSTNAME: ${APP_HOSTNAME}
+    volumes:
+      - certbot-central-certs:/etc/letsencrypt:ro
+      - ./docker/nginx/templates:/etc/nginx/templates:ro
+    # Official nginx image runs envsubst on *.template under /etc/nginx/templates
+
+volumes:
+  app-data:
+  certbot-central-certs:
+    external: true

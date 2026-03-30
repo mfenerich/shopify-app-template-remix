@@ -1,5 +1,9 @@
 # Deployment & configuration
 
+## Docker (on-prem, certbot-central TLS)
+
+See **`docs/DOCKER.md`** for `docker compose` with nginx and the shared `certbot-central-certs` volume.
+
 ## Shopify app (Remix backend)
 
 1. **App URL & OAuth redirects**  
