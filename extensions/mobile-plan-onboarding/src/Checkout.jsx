@@ -6,17 +6,26 @@ import {
   mountOrderSummaryMonthlyPricing,
 } from "./monthlyPricing.js";
 import { getSubscriptionLines } from "./subscriptionLines.js";
-const NUMBER_API_BASE_URL =
-  "https://mock-phone-numbers-759347772663.europe-west6.run.app";
+
+/** Nextphone number pool (Cloud Function). See nextphone-numbers-pool WIKI.md */
+const NUMBER_POOL_BASE_URL =
+  "https://europe-west6-rvag-pricing.cloudfunctions.net/numbers";
 
 const pendingAttributes = {};
 let saveTimer = null;
+/** Bumped when leaving "new number" mode, clearing the select, or starting a new lock — stale async completions must not touch formState. */
+let numberPoolLockOpSeq = 0;
+
 const formState = {
   choice: "",
   portNumber: "",
   termination: "",
   portConsent: false,
   selectedNumberId: "",
+  numberPoolSessionIdForApi: "",
+  numberPoolLockId: "",
+  numberPoolLockedNumberId: "",
+  numberPoolLocking: false,
 };
 
 /**
@@ -54,6 +63,141 @@ async function flushAttributes() {
       value,
     });
   }
+}
+
+function getNumberPoolSessionIdFallback() {
+  return `np_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}
+
+/**
+ * Resolves a session id for GET /available and matching POST /lock for this picker
+ * instance. No module-level cache — always prefers the current checkout token so a
+ * new load (e.g. Retry) uses an up-to-date id. `formState.numberPoolSessionIdForApi`
+ * is set only after a successful lock (for unlock).
+ */
+async function resolveNumberPoolSessionId() {
+  const immediate = shopify.checkoutToken?.current;
+  if (immediate) return String(immediate);
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer = null;
+    let unsub = null;
+    const finish = (id) => {
+      if (settled) return;
+      settled = true;
+      if (timer != null) clearTimeout(timer);
+      if (typeof unsub === "function") unsub();
+      resolve(id);
+    };
+    unsub = shopify.checkoutToken?.subscribe?.(() => {
+      const t = shopify.checkoutToken?.current;
+      if (t) finish(String(t));
+    });
+    timer = setTimeout(() => {
+      finish(getNumberPoolSessionIdFallback());
+    }, 3000);
+  });
+}
+
+async function fetchNumberPoolAvailable(sessionId) {
+  const url = `${NUMBER_POOL_BASE_URL}/available?sessionId=${encodeURIComponent(sessionId)}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("available_failed");
+  return response.json();
+}
+
+async function postNumberPoolLock(sessionId, numberId) {
+  return fetch(`${NUMBER_POOL_BASE_URL}/lock`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ numberId, sessionId }),
+  });
+}
+
+async function postNumberPoolUnlock(sessionId, numberId, lockId) {
+  return fetch(`${NUMBER_POOL_BASE_URL}/unlock`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ numberId, lockId, sessionId }),
+  });
+}
+
+/**
+ * Releases a hard lock (abandon, order complete, or before a new lock).
+ * @param {{ clearSelection?: boolean }} options — clear cart attributes when buyer leaves "new number" flow
+ */
+async function releaseNumberPoolLock(options = {}) {
+  const clearSelection = options.clearSelection !== false;
+  const lockId = formState.numberPoolLockId;
+  const numberId = formState.numberPoolLockedNumberId;
+  const sessionId = formState.numberPoolSessionIdForApi;
+  if (clearSelection) {
+    formState.selectedNumberId = "";
+    queueAttributeChange("mobile_number_lock_id", "");
+    queueAttributeChange("mobile_selected_number", "");
+    queueAttributeChange("mobile_selected_number_id", "");
+  }
+  formState.numberPoolLockId = "";
+  formState.numberPoolLockedNumberId = "";
+  formState.numberPoolSessionIdForApi = "";
+  if (!lockId || !numberId || !sessionId) return;
+  try {
+    await postNumberPoolUnlock(sessionId, numberId, lockId);
+  } catch {
+    /* best-effort; 404 = already released */
+  }
+}
+
+/** DOM `e.target.value` is always a string; API `id` may be number or string. */
+function numberPoolIdKey(id) {
+  return String(id);
+}
+
+/** Clears selection so the buyer can pick again; some hosts only re-fire `change` after a real reset. */
+function resetNumberSelectAfterFailedLock(select) {
+  select.value = "";
+  requestAnimationFrame(() => {
+    select.value = "";
+  });
+}
+
+async function lockNumberFromPool(sessionId, numbers, selectedId) {
+  const selectedKey = numberPoolIdKey(selectedId);
+  const startIdx = numbers.findIndex(
+    (n) => numberPoolIdKey(n.id) === selectedKey,
+  );
+  const ordered =
+    startIdx === -1
+      ? numbers
+      : [...numbers.slice(startIdx), ...numbers.slice(0, startIdx)];
+
+  const tryList = async (list) => {
+    for (const num of list) {
+      const res = await postNumberPoolLock(sessionId, num.id);
+      if (res.ok) {
+        const data = await res.json();
+        const lockId = data.lockId;
+        if (!lockId) return { ok: false, failed: true };
+        return { ok: true, number: num, lockId };
+      }
+      if (res.status === 409) continue;
+      return { ok: false, failed: true, status: res.status };
+    }
+    return { ok: false, exhausted: true };
+  };
+
+  let result = await tryList(ordered);
+  if (result.ok) return result;
+  if (!result.exhausted) return result;
+
+  const fresh = await fetchNumberPoolAvailable(sessionId);
+  const freshNumbers = fresh.numbers || [];
+  if (fresh.pool_exhausted || freshNumbers.length === 0) {
+    return { ok: false, poolEmpty: true };
+  }
+  result = await tryList(freshNumbers);
+  if (result.ok) return result;
+  return { ok: false, failed: true };
 }
 
 function getPlanTitle(line) {
@@ -164,6 +308,10 @@ function applyChoiceCardAppearance(card, selected) {
 function getValidationErrors() {
   const errors = [];
 
+  if (shopify.buyerJourney?.completed?.current) {
+    return errors;
+  }
+
   if (!formState.choice) {
     errors.push("Choose whether you want to port your number or select a new number.");
     return errors;
@@ -181,8 +329,12 @@ function getValidationErrors() {
     }
   }
 
-  if (formState.choice === "no" && !formState.selectedNumberId) {
-    errors.push("Select a new phone number.");
+  if (formState.choice === "no") {
+    if (formState.numberPoolLocking) {
+      errors.push("Please wait while your number is being reserved.");
+    } else if (!formState.numberPoolLockId) {
+      errors.push("Select a new phone number.");
+    }
   }
 
   return errors;
@@ -378,6 +530,13 @@ export default function () {
     });
   }
 
+  const journeyCompleted = shopify.buyerJourney?.completed;
+  if (journeyCompleted?.subscribe) {
+    journeyCompleted.subscribe((completed) => {
+      if (completed) void releaseNumberPoolLock({ clearSelection: false });
+    });
+  }
+
   stack.appendChild(
     el("s-paragraph", {
       color: "subdued",
@@ -473,13 +632,19 @@ export default function () {
 
   function handleChoiceChange(value) {
     touchChoiceInteraction();
+    const prevChoice = formState.choice;
     dynamicArea.replaceChildren();
     formValidationHost.replaceChildren();
+    if (prevChoice === "no" && value !== "no") {
+      numberPoolLockOpSeq += 1;
+      void releaseNumberPoolLock({ clearSelection: true });
+    }
     formState.choice = value || "";
     formState.portNumber = "";
     formState.termination = "";
     formState.portConsent = false;
     formState.selectedNumberId = "";
+    formState.numberPoolLocking = false;
     updateChoiceButtons();
 
     queueAttributeChange("mobile_number_choice", value === "yes" ? "port" : "new");
@@ -670,21 +835,19 @@ async function renderNewNumberFields(container) {
   container.appendChild(stack);
 
   try {
-    const response = await fetch(
-      `${NUMBER_API_BASE_URL}/api/numbers/available`,
-    );
-    if (!response.ok) throw new Error("Failed to fetch");
-    const data = await response.json();
+    const sessionId = await resolveNumberPoolSessionId();
+    const data = await fetchNumberPoolAvailable(sessionId);
     const numbers = data.numbers || [];
 
     loadingRow.remove();
 
-    if (numbers.length === 0) {
+    if (data.pool_exhausted || numbers.length === 0) {
       stack.appendChild(
         el("s-banner", {
-          heading: "No numbers available",
+          heading: "No numbers available right now",
           tone: "warning",
-          textContent: "Please try again later.",
+          textContent:
+            "The pool is temporarily empty. Browsing sessions expire within a few minutes — please try again shortly.",
         }),
       );
 
@@ -700,6 +863,17 @@ async function renderNewNumberFields(container) {
       return;
     }
 
+    if (data.high_demand) {
+      stack.appendChild(
+        el("s-banner", {
+          heading: "High demand",
+          tone: "info",
+          textContent:
+            "Many customers are choosing numbers. If your first choice is taken, we will try the next available option automatically.",
+        }),
+      );
+    }
+
     const select = el("s-select", {
       label: "Select number",
     });
@@ -713,23 +887,105 @@ async function renderNewNumberFields(container) {
     }
 
     let confirmBanner = null;
+    let errorBanner = null;
 
-    select.addEventListener("change", (e) => {
+    select.addEventListener("change", async (e) => {
       touchFieldInteraction();
       const selectedId = e.target.value;
-      formState.selectedNumberId = selectedId;
-      const numberObj = numbers.find((n) => n.id === selectedId);
-      if (numberObj) {
-        queueAttributeChange("mobile_selected_number", numberObj.number);
-        queueAttributeChange("mobile_selected_number_id", numberObj.id);
 
-        if (confirmBanner) confirmBanner.remove();
-        confirmBanner = el("s-banner", {
-          heading: numberObj.number,
-          tone: "success",
-          textContent: "This number will be assigned to your plan.",
-        });
-        stack.appendChild(confirmBanner);
+      if (confirmBanner) {
+        confirmBanner.remove();
+        confirmBanner = null;
+      }
+      if (errorBanner) {
+        errorBanner.remove();
+        errorBanner = null;
+      }
+
+      if (!selectedId) {
+        numberPoolLockOpSeq += 1;
+        await releaseNumberPoolLock({ clearSelection: true });
+        return;
+      }
+
+      const opSeq = (numberPoolLockOpSeq += 1);
+      formState.numberPoolLocking = true;
+      select.disabled = true;
+
+      try {
+        const lockIdHeldBeforeRelease = formState.numberPoolLockId;
+
+        await releaseNumberPoolLock({ clearSelection: false });
+
+        formState.selectedNumberId = "";
+        queueAttributeChange("mobile_selected_number", "");
+        queueAttributeChange("mobile_selected_number_id", "");
+        queueAttributeChange("mobile_number_lock_id", "");
+
+        const result = await lockNumberFromPool(sessionId, numbers, selectedId);
+
+        if (opSeq !== numberPoolLockOpSeq) {
+          if (
+            result.ok &&
+            result.lockId &&
+            result.lockId !== lockIdHeldBeforeRelease
+          ) {
+            void postNumberPoolUnlock(
+              sessionId,
+              result.number.id,
+              result.lockId,
+            );
+          }
+          return;
+        }
+
+        if (result.ok) {
+          const numberObj = result.number;
+          const lockedIdKey = numberPoolIdKey(numberObj.id);
+          formState.selectedNumberId = lockedIdKey;
+          formState.numberPoolSessionIdForApi = sessionId;
+          formState.numberPoolLockId = result.lockId;
+          formState.numberPoolLockedNumberId = lockedIdKey;
+          queueAttributeChange("mobile_selected_number", numberObj.number);
+          queueAttributeChange("mobile_selected_number_id", lockedIdKey);
+          queueAttributeChange("mobile_number_lock_id", result.lockId);
+
+          if (lockedIdKey !== numberPoolIdKey(selectedId)) {
+            select.value = lockedIdKey;
+          }
+
+          confirmBanner = el("s-banner", {
+            heading: numberObj.number,
+            tone: "success",
+            textContent: "This number will be assigned to your plan.",
+          });
+          stack.appendChild(confirmBanner);
+        } else {
+          resetNumberSelectAfterFailedLock(e.target);
+          const msg = result.poolEmpty
+            ? "No numbers are available right now. Please try again in a moment."
+            : "Could not reserve a number. Please choose again or retry.";
+          errorBanner = el("s-banner", {
+            heading: "Could not reserve number",
+            tone: "critical",
+            textContent: msg,
+          });
+          stack.appendChild(errorBanner);
+        }
+      } catch {
+        if (opSeq === numberPoolLockOpSeq) {
+          resetNumberSelectAfterFailedLock(e.target);
+          errorBanner = el("s-banner", {
+            heading: "Could not reserve number",
+            tone: "critical",
+            textContent:
+              "Something went wrong while reserving your number. Please try again.",
+          });
+          stack.appendChild(errorBanner);
+        }
+      } finally {
+        formState.numberPoolLocking = false;
+        select.disabled = false;
       }
     });
 
