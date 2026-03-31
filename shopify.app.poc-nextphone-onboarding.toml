@@ -32,3 +32,8 @@ scopes = "write_products"
 [auth]
 # OAuth callback for this Remix app (authPathPrefix /auth → /auth/callback)
 redirect_urls = [ "https://mobile-onboarding-stage.revendo.com:8889/auth/callback" ]
+
+[app_proxy]
+url = "https://europe-west6-shopify-458710.cloudfunctions.net/numbers_proxy"
+subpath = "numbers"
+prefix = "apps"
