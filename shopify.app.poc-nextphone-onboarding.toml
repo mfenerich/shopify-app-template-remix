@@ -6,7 +6,7 @@
 # If your public URL has no port (TLS on 443), set application_url, redirect_urls, and
 # SHOPIFY_APP_URL without :8889 everywhere (Partners + server .env must match).
 
-client_id = "831ad39f2f1b29313eb128377cebd153"
+client_id = "718701678911bc5b20d0cb1769f846a1"
 name = "poc-nextphone-onboarding"
 application_url = "https://mobile-onboarding-stage.revendo.com:8889"
 embedded = true

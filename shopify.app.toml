@@ -1,19 +1,15 @@
-# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration
-#
-# Production: set application_url and [auth] redirect_urls in Partner Dashboard
-# to your real app URL. `shopify app dev` can override URLs locally when
-# automatically_update_urls_on_dev is true.
+# Default app config for CLI. Prefer `shopify.app.poc-nextphone-onboarding.toml` when both exist;
+# keep these in sync (same client_id, URLs, scopes).
 
-client_id = "ca95ce5747094c2ace99b7b1b5335119"
+client_id = "718701678911bc5b20d0cb1769f846a1"
 name = "poc-nextphone-onboarding"
-application_url = "https://shopify.dev/apps/default-app-home"
+application_url = "https://mobile-onboarding-stage.revendo.com:8889"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
 
 [webhooks]
-# Align with Admin API version in app/shopify.server.ts (ApiVersion.January26 → 2026-01)
 api_version = "2026-01"
 
   [[webhooks.subscriptions]]
@@ -25,10 +21,7 @@ api_version = "2026-01"
   uri = "/webhooks/app/uninstalled"
 
 [access_scopes]
-# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-# Required for default Remix template Admin demo (productCreate). Sync with SCOPES in .env.
 scopes = "write_products"
 
 [auth]
-# Replace with production callback URL(s); e.g. https://your-app.com/auth/callback
-redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+redirect_urls = [ "https://mobile-onboarding-stage.revendo.com:8889/auth/callback" ]
