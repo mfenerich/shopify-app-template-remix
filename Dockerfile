@@ -8,12 +8,15 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 
-RUN npm ci --omit=dev && npm cache clean --force
+# Full install: `vite` and other build-time deps live in devDependencies.
+RUN npm ci && npm cache clean --force
 
 COPY . .
 
 RUN npm run build && npx prisma generate
+
+RUN npm prune --omit=dev && npm cache clean --force
 
 CMD ["npm", "run", "docker-start"]
