@@ -13,7 +13,6 @@ embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
-include_config_on_deploy = true
 
 [webhooks]
 # Align with Admin API in app/shopify.server.ts (ApiVersion.January26)
