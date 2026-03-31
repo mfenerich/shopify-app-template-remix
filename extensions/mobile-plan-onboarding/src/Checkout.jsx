@@ -10,10 +10,14 @@ import { getSubscriptionLines } from "./subscriptionLines.js";
 
 /**
  * Number pool via Shopify App Proxy (shopify.app.toml [app_proxy]: prefix apps, subpath numbers).
- * Requests go to https://{shop}/apps/numbers/* → numbers_proxy (not the public Cloud Function URL).
+ * Prefer `shop.storefrontUrl` (primary domain) over `*.myshopify.com` — the latter often 301s
+ * to the primary host; following that redirect in checkout `fetch` can fail or drop params.
  */
-function numberPoolAppProxyBaseUrl(myshopifyDomain) {
-  return `https://${myshopifyDomain}/apps/numbers`;
+function numberPoolAppProxyBaseUrl(shop) {
+  const origin = shop.storefrontUrl
+    ? shop.storefrontUrl.replace(/\/$/, "")
+    : `https://${shop.myshopifyDomain}`;
+  return `${origin}/apps/numbers`;
 }
 
 const pendingAttributes = {};
@@ -457,7 +461,7 @@ async function validateSubscriptionCart(subscriptionLines, bannerHost, monthlyHo
 
 export default function () {
   const shop = useShop();
-  const numberPoolBaseUrl = numberPoolAppProxyBaseUrl(shop.myshopifyDomain);
+  const numberPoolBaseUrl = numberPoolAppProxyBaseUrl(shop);
 
   const lines = shopify.lines.current;
   const subscriptionLines = getSubscriptionLines(lines);
