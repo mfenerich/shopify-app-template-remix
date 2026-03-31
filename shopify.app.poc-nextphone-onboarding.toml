@@ -1,0 +1,35 @@
+# Linked app: poc-nextphone-onboarding (Revendo AG). Deploy: `npm run deploy`
+#
+# Public client id is `client_id` below — same value as SHOPIFY_API_KEY / Partner "Client ID".
+# The secret is only in Partners (never commit it); put it in .env as SHOPIFY_API_SECRET.
+#
+# If your public URL has no port (TLS on 443), set application_url, redirect_urls, and
+# SHOPIFY_APP_URL without :8889 everywhere (Partners + server .env must match).
+
+client_id = "831ad39f2f1b29313eb128377cebd153"
+name = "poc-nextphone-onboarding"
+application_url = "https://mobile-onboarding-stage.revendo.com:8889"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+include_config_on_deploy = true
+
+[webhooks]
+# Align with Admin API in app/shopify.server.ts (ApiVersion.January26)
+api_version = "2026-01"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+[access_scopes]
+scopes = "write_products"
+
+[auth]
+# OAuth callback for this Remix app (authPathPrefix /auth → /auth/callback)
+redirect_urls = [ "https://mobile-onboarding-stage.revendo.com:8889/auth/callback" ]

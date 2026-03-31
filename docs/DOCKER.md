@@ -20,13 +20,33 @@ This stack runs the Remix app behind **nginx** with TLS certificates from **cert
 Partner Dashboard **App URL** and **Allowed redirection URL(s)** must match `SHOPIFY_APP_URL` exactly (including port if present).
 3. **TLS** — pick one:
 
-   **A. certbot-central (Let’s Encrypt)** on the same Docker host as `revendo-certs` (shared volume `certbot-central-certs`):
+   **A. Central `revendo-certs` on marketplaces** (existing org setup) — shared volume `certbot-central-certs` already on that Docker host:
 
    ```bash
    ssh -p 7023 dockerdeploy@marketplaces.revendo.com
    cd /srv/dockerdeploy/revendo-certs
    ./scripts/add-domain.sh your-app-hostname.revendo.com
    ```
+
+   Your app’s VM must mount that **same** volume name (usually only if the app runs on that host or shares the volume — most staging boxes do **not**).
+
+   **A′. certbot-central on the staging VM** — if staging **does not** use marketplaces’ volume, deploy the **certbot-central** stack on **the same machine** that runs this app’s Docker Compose (e.g. clone [`certbot-central`](https://github.com/revendo/revendo-certs) or your internal mirror). That creates the `certbot-central-certs` volume locally.
+
+   1. **Cloudflare:** The hostname must live in a zone your API token can edit (DNS-01). `mobile-onboarding-stage.revendo.com` under `revendo.com` is fine if the token has **Zone → DNS → Edit** for that zone.
+   2. On the staging VM:
+
+      ```bash
+      cd /path/to/certbot-central
+      cp certbot/cloudflare.ini.example certbot/cloudflare.ini
+      # Paste API token; chmod 600 certbot/cloudflare.ini
+      docker compose up -d
+      ./scripts/add-domain.sh mobile-onboarding-stage.revendo.com
+      ```
+
+   3. Confirm: `./scripts/list-certs.sh` (or `docker compose run --rm --entrypoint certbot certbot certificates`).
+   4. Then start **this** app: `docker compose up -d` (same Docker daemon → same `certbot-central-certs` volume).
+
+   See the **certbot-central** repo `README.md` for details. Keep the renewal container running (`certbot-central`).
 
    **B. Commercial wildcard `*.revendo.com`** (e.g. `STAR_revendo_com.crt`, `STAR_revendo_com.ca-bundle`, `revendo_com.key`):
 
@@ -63,7 +83,7 @@ volumes:
     external: true
 ```
 
-The volume name must match the one created by **revendo-certs** on that server. If your ops team uses a different name, change `external: true` and the volume name accordingly.
+The volume name must match **`certbot-central-certs`** (created when certbot-central runs once — either on **marketplaces** or on **staging** per TLS option A or A′ above). If your ops team renames it, change `external: true` and the volume name in `docker-compose.yml` accordingly.
 
 The **nginx** container name includes `nginx` so cert renewal can auto-reload it (see wiki).
 
@@ -111,4 +131,4 @@ For production-grade concurrency, consider PostgreSQL and a Prisma migration to 
 
 - **502 / bad gateway** — Check `docker compose logs app` and that the app listens on `3000` inside the network.
 - **Certificate not found** — Run `./scripts/list-certs.sh` on the certbot host; paths must be `/etc/letsencrypt/live/<APP_HOSTNAME>/`.
-- **OAuth redirect mismatch** — `SHOPIFY_APP_URL` must exactly match App URL in Partner Dashboard (scheme, host, no trailing slash).
+- **OAuth redirect mismatch** — `SHOPIFY_APP_URL` must exactly match App URL in Partner Dashboard (scheme, host, **port if any**, no trailing slash).
