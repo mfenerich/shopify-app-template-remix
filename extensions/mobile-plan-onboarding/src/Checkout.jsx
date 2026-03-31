@@ -1,4 +1,5 @@
 import "@shopify/ui-extensions/preact";
+import { useShop } from "@shopify/ui-extensions/checkout/preact";
 
 import { el } from "./polarisDom.js";
 import {
@@ -7,9 +8,13 @@ import {
 } from "./monthlyPricing.js";
 import { getSubscriptionLines } from "./subscriptionLines.js";
 
-/** Nextphone number pool (Cloud Function). See nextphone-numbers-pool WIKI.md */
-const NUMBER_POOL_BASE_URL =
-  "https://europe-west6-rvag-pricing.cloudfunctions.net/numbers";
+/**
+ * Number pool via Shopify App Proxy (shopify.app.toml [app_proxy]: prefix apps, subpath numbers).
+ * Requests go to https://{shop}/apps/numbers/* → numbers_proxy (not the public Cloud Function URL).
+ */
+function numberPoolAppProxyBaseUrl(myshopifyDomain) {
+  return `https://${myshopifyDomain}/apps/numbers`;
+}
 
 const pendingAttributes = {};
 let saveTimer = null;
@@ -99,23 +104,23 @@ async function resolveNumberPoolSessionId() {
   });
 }
 
-async function fetchNumberPoolAvailable(sessionId) {
-  const url = `${NUMBER_POOL_BASE_URL}/available?sessionId=${encodeURIComponent(sessionId)}`;
+async function fetchNumberPoolAvailable(baseUrl, sessionId) {
+  const url = `${baseUrl}/available?sessionId=${encodeURIComponent(sessionId)}`;
   const response = await fetch(url);
   if (!response.ok) throw new Error("available_failed");
   return response.json();
 }
 
-async function postNumberPoolLock(sessionId, numberId) {
-  return fetch(`${NUMBER_POOL_BASE_URL}/lock`, {
+async function postNumberPoolLock(baseUrl, sessionId, numberId) {
+  return fetch(`${baseUrl}/lock`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ numberId, sessionId }),
   });
 }
 
-async function postNumberPoolUnlock(sessionId, numberId, lockId) {
-  return fetch(`${NUMBER_POOL_BASE_URL}/unlock`, {
+async function postNumberPoolUnlock(baseUrl, sessionId, numberId, lockId) {
+  return fetch(`${baseUrl}/unlock`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ numberId, lockId, sessionId }),
@@ -126,7 +131,7 @@ async function postNumberPoolUnlock(sessionId, numberId, lockId) {
  * Releases a hard lock (abandon, order complete, or before a new lock).
  * @param {{ clearSelection?: boolean }} options — clear cart attributes when buyer leaves "new number" flow
  */
-async function releaseNumberPoolLock(options = {}) {
+async function releaseNumberPoolLock(baseUrl, options = {}) {
   const clearSelection = options.clearSelection !== false;
   const lockId = formState.numberPoolLockId;
   const numberId = formState.numberPoolLockedNumberId;
@@ -142,7 +147,7 @@ async function releaseNumberPoolLock(options = {}) {
   formState.numberPoolSessionIdForApi = "";
   if (!lockId || !numberId || !sessionId) return;
   try {
-    await postNumberPoolUnlock(sessionId, numberId, lockId);
+    await postNumberPoolUnlock(baseUrl, sessionId, numberId, lockId);
   } catch {
     /* best-effort; 404 = already released */
   }
@@ -161,7 +166,7 @@ function resetNumberSelectAfterFailedLock(select) {
   });
 }
 
-async function lockNumberFromPool(sessionId, numbers, selectedId) {
+async function lockNumberFromPool(baseUrl, sessionId, numbers, selectedId) {
   const selectedKey = numberPoolIdKey(selectedId);
   const startIdx = numbers.findIndex(
     (n) => numberPoolIdKey(n.id) === selectedKey,
@@ -173,7 +178,7 @@ async function lockNumberFromPool(sessionId, numbers, selectedId) {
 
   const tryList = async (list) => {
     for (const num of list) {
-      const res = await postNumberPoolLock(sessionId, num.id);
+      const res = await postNumberPoolLock(baseUrl, sessionId, num.id);
       if (res.ok) {
         const data = await res.json();
         const lockId = data.lockId;
@@ -190,7 +195,7 @@ async function lockNumberFromPool(sessionId, numbers, selectedId) {
   if (result.ok) return result;
   if (!result.exhausted) return result;
 
-  const fresh = await fetchNumberPoolAvailable(sessionId);
+  const fresh = await fetchNumberPoolAvailable(baseUrl, sessionId);
   const freshNumbers = fresh.numbers || [];
   if (fresh.pool_exhausted || freshNumbers.length === 0) {
     return { ok: false, poolEmpty: true };
@@ -451,6 +456,9 @@ async function validateSubscriptionCart(subscriptionLines, bannerHost, monthlyHo
 }
 
 export default function () {
+  const shop = useShop();
+  const numberPoolBaseUrl = numberPoolAppProxyBaseUrl(shop.myshopifyDomain);
+
   const lines = shopify.lines.current;
   const subscriptionLines = getSubscriptionLines(lines);
   const hasMobilePlan = subscriptionLines.length > 0;
@@ -533,7 +541,8 @@ export default function () {
   const journeyCompleted = shopify.buyerJourney?.completed;
   if (journeyCompleted?.subscribe) {
     journeyCompleted.subscribe((completed) => {
-      if (completed) void releaseNumberPoolLock({ clearSelection: false });
+      if (completed)
+        void releaseNumberPoolLock(numberPoolBaseUrl, { clearSelection: false });
     });
   }
 
@@ -637,7 +646,7 @@ export default function () {
     formValidationHost.replaceChildren();
     if (prevChoice === "no" && value !== "no") {
       numberPoolLockOpSeq += 1;
-      void releaseNumberPoolLock({ clearSelection: true });
+      void releaseNumberPoolLock(numberPoolBaseUrl, { clearSelection: true });
     }
     formState.choice = value || "";
     formState.portNumber = "";
@@ -652,7 +661,7 @@ export default function () {
     if (value === "yes") {
       renderPortFields(dynamicArea);
     } else if (value === "no") {
-      renderNewNumberFields(dynamicArea);
+      renderNewNumberFields(dynamicArea, numberPoolBaseUrl);
     }
   }
 
@@ -810,7 +819,7 @@ function renderPortFields(container) {
   container.appendChild(stack);
 }
 
-async function renderNewNumberFields(container) {
+async function renderNewNumberFields(container, baseUrl) {
   const stack = el("s-stack", { gap: "base" });
 
   stack.appendChild(
@@ -836,7 +845,7 @@ async function renderNewNumberFields(container) {
 
   try {
     const sessionId = await resolveNumberPoolSessionId();
-    const data = await fetchNumberPoolAvailable(sessionId);
+    const data = await fetchNumberPoolAvailable(baseUrl, sessionId);
     const numbers = data.numbers || [];
 
     loadingRow.remove();
@@ -857,7 +866,7 @@ async function renderNewNumberFields(container) {
       });
       retryBtn.addEventListener("click", () => {
         container.replaceChildren();
-        renderNewNumberFields(container);
+        renderNewNumberFields(container, baseUrl);
       });
       stack.appendChild(retryBtn);
       return;
@@ -904,7 +913,7 @@ async function renderNewNumberFields(container) {
 
       if (!selectedId) {
         numberPoolLockOpSeq += 1;
-        await releaseNumberPoolLock({ clearSelection: true });
+        await releaseNumberPoolLock(baseUrl, { clearSelection: true });
         return;
       }
 
@@ -915,14 +924,19 @@ async function renderNewNumberFields(container) {
       try {
         const lockIdHeldBeforeRelease = formState.numberPoolLockId;
 
-        await releaseNumberPoolLock({ clearSelection: false });
+        await releaseNumberPoolLock(baseUrl, { clearSelection: false });
 
         formState.selectedNumberId = "";
         queueAttributeChange("mobile_selected_number", "");
         queueAttributeChange("mobile_selected_number_id", "");
         queueAttributeChange("mobile_number_lock_id", "");
 
-        const result = await lockNumberFromPool(sessionId, numbers, selectedId);
+        const result = await lockNumberFromPool(
+          baseUrl,
+          sessionId,
+          numbers,
+          selectedId,
+        );
 
         if (opSeq !== numberPoolLockOpSeq) {
           if (
@@ -931,6 +945,7 @@ async function renderNewNumberFields(container) {
             result.lockId !== lockIdHeldBeforeRelease
           ) {
             void postNumberPoolUnlock(
+              baseUrl,
               sessionId,
               result.number.id,
               result.lockId,
@@ -1007,7 +1022,7 @@ async function renderNewNumberFields(container) {
     });
     retryBtn.addEventListener("click", () => {
       container.replaceChildren();
-      renderNewNumberFields(container);
+      renderNewNumberFields(container, baseUrl);
     });
     stack.appendChild(retryBtn);
   }
