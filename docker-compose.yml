@@ -39,6 +39,9 @@ services:
       - "${HTTP_PORT:-80}:80"
     environment:
       APP_HOSTNAME: ${APP_HOSTNAME}
+      # Default: certbot-central paths. Override for commercial wildcard (see docker-compose.wildcard-tls.yml + docs/DOCKER.md).
+      SSL_CERTIFICATE: ${SSL_CERTIFICATE:-/etc/letsencrypt/live/${APP_HOSTNAME}/fullchain.pem}
+      SSL_CERTIFICATE_KEY: ${SSL_CERTIFICATE_KEY:-/etc/letsencrypt/live/${APP_HOSTNAME}/privkey.pem}
     volumes:
       - certbot-central-certs:/etc/letsencrypt:ro
       - ./docker/nginx/templates:/etc/nginx/templates:ro

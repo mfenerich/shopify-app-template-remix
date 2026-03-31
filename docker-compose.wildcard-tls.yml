@@ -1,0 +1,17 @@
+# Optional: commercial wildcard cert (*.revendo.com) instead of certbot-central.
+#
+# 1. On a trusted machine, assemble PEMs from your provider (see docs/DOCKER.md).
+# 2. Place fullchain.pem + privkey.pem in ./docker/ssl/ on the server.
+# 3. Run:
+#    docker compose -f docker-compose.yml -f docker-compose.wildcard-tls.yml up -d
+#
+# You can drop the certbot-central volume requirement on this host by using a compose override
+# that removes the external volume — or leave it (unused) if the volume still exists.
+
+services:
+  nginx:
+    environment:
+      SSL_CERTIFICATE: /etc/nginx/tls/fullchain.pem
+      SSL_CERTIFICATE_KEY: /etc/nginx/tls/privkey.pem
+    volumes:
+      - ./docker/ssl:/etc/nginx/tls:ro

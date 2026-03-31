@@ -17,8 +17,10 @@ server {
     http2 on;
     server_name ${APP_HOSTNAME};
 
-    ssl_certificate /etc/letsencrypt/live/${APP_HOSTNAME}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${APP_HOSTNAME}/privkey.pem;
+    # Set via env (see docker-compose.yml). Defaults: certbot-central layout under /etc/letsencrypt/live/<APP_HOSTNAME>/
+    # Wildcard *.revendo.com: use docker-compose.wildcard-tls.yml and paths under /etc/nginx/tls/
+    ssl_certificate ${SSL_CERTIFICATE};
+    ssl_certificate_key ${SSL_CERTIFICATE_KEY};
 
     ssl_session_timeout 1d;
     ssl_session_cache shared:SSL:50m;
