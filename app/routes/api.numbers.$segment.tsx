@@ -15,6 +15,13 @@ const UPSTREAM =
 
 const API_KEY = process.env.NUMBERS_API_KEY || "";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
+  "Access-Control-Max-Age": "86400",
+};
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   if (params.segment !== "available") {
     throw new Response("Not Found", { status: 404 });
@@ -46,13 +53,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }),
   );
 }
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
-  "Access-Control-Max-Age": "86400",
-};
 
 export async function action({ request, params }: ActionFunctionArgs) {
   const seg = params.segment;
