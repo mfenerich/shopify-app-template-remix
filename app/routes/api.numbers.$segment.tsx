@@ -19,6 +19,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (params.segment !== "available") {
     throw new Response("Not Found", { status: 404 });
   }
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+
   const { cors } = await authenticate.public.checkout(request);
   const src = new URL(request.url);
   const upstream = new URL(`${UPSTREAM.replace(/\/$/, "")}/available`);
@@ -42,11 +47,23 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   );
 }
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
+  "Access-Control-Max-Age": "86400",
+};
+
 export async function action({ request, params }: ActionFunctionArgs) {
   const seg = params.segment;
   if (seg !== "lock" && seg !== "unlock") {
     throw new Response("Not Found", { status: 404 });
   }
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+
   const { cors } = await authenticate.public.checkout(request);
   const body = await request.text();
   const res = await fetch(`${UPSTREAM.replace(/\/$/, "")}/${seg}`, {
