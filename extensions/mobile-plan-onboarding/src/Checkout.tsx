@@ -32,8 +32,16 @@ import { renderPortFields } from "./portForm.js";
 import { renderNewNumberFields } from "./newNumberForm.js";
 
 /**
- * Resolve the numbers API origin from extension settings, falling back to
- * the application_url in shopify.app.toml (embedded in the checkout context).
+ * The app's public URL — used as final fallback when the extension setting
+ * `numbers_api_origin` is not configured in the checkout editor.
+ * Configure the setting to override this without a redeploy.
+ */
+const NUMBERS_API_ORIGIN_DEFAULT = "https://mobile-onboarding-stage.revendo.com:8889";
+
+/**
+ * Resolve the numbers API origin, in priority order:
+ * 1. Extension setting `numbers_api_origin` (configured in checkout editor — no redeploy needed)
+ * 2. Hardcoded default (same URL as application_url in shopify.app.toml)
  */
 function resolveApiOrigin(): string {
   const settings = (shopify as unknown as Record<string, unknown>).settings as
@@ -43,12 +51,7 @@ function resolveApiOrigin(): string {
   if (typeof fromSettings === "string" && fromSettings.trim()) {
     return fromSettings.trim();
   }
-  // Fallback: use extension.origin which equals the app's application_url
-  const ext = (shopify as unknown as Record<string, unknown>).extension as
-    | { origin?: string }
-    | undefined;
-  if (ext?.origin) return ext.origin;
-  return "";
+  return NUMBERS_API_ORIGIN_DEFAULT;
 }
 
 function renderPricingSummary(host: HTMLElement): void {
