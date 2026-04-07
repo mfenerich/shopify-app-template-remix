@@ -21,7 +21,7 @@ api_version = "2026-01"
   uri = "/webhooks/app/uninstalled"
 
 [access_scopes]
-scopes = "write_products"
+scopes = "read_products"
 
 [auth]
 redirect_urls = [ "https://mobile-onboarding-stage.revendo.com:8889/auth/callback" ]

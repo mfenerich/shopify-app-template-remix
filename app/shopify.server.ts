@@ -18,7 +18,7 @@ const shopify = shopifyApp({
   scopes:
     scopesFromEnv && scopesFromEnv.length > 0
       ? scopesFromEnv
-      : ["write_products"],
+      : ["read_products"],
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
