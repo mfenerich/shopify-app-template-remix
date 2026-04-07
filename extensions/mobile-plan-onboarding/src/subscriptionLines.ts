@@ -1,10 +1,12 @@
+import type { CheckoutLine } from "./types.js";
+
 /**
- * Lines that count as “mobile subscription” for monthly recurring pricing.
+ * Lines that count as "mobile subscription" for monthly recurring pricing.
  * Prefer product type; fall back to title when productType is missing in some contexts.
  */
 const MOBILE_SUBSCRIPTION_TYPE = "Mobile-subscription";
 
-export function isMobileSubscriptionLine(line) {
+export function isMobileSubscriptionLine(line: CheckoutLine): boolean {
   const product = line.merchandise?.product;
   const pt = product?.productType?.trim() ?? "";
   if (
@@ -18,12 +20,9 @@ export function isMobileSubscriptionLine(line) {
     line.merchandise?.title ||
     ""
   ).toLowerCase();
-  if (title.includes("mobile plan")) {
-    return true;
-  }
-  return false;
+  return title.includes("mobile plan");
 }
 
-export function getSubscriptionLines(lines) {
+export function getSubscriptionLines(lines: CheckoutLine[]): CheckoutLine[] {
   return (lines || []).filter(isMobileSubscriptionLine);
 }

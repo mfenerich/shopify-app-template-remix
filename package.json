@@ -16,6 +16,10 @@
     "prisma:migrate": "cross-env DATABASE_URL=file:./prisma/dev.sqlite prisma migrate deploy",
     "setup": "npm run prisma:generate && npm run prisma:migrate",
     "lint": "eslint --cache --cache-location ./node_modules/.cache/eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p extensions/mobile-plan-onboarding/tsconfig.json",
+    "typecheck:all": "tsc --noEmit && npm run typecheck",
     "shopify": "shopify",
     "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
@@ -46,6 +50,7 @@
     "@remix-run/eslint-config": "^2.16.1",
     "@remix-run/route-config": "^2.16.1",
     "@shopify/api-codegen-preset": "^1.1.1",
+    "@testing-library/dom": "^10.4.1",
     "@types/eslint": "^9.6.1",
     "@types/node": "^22.2.0",
     "@types/react": "^18.2.31",
@@ -53,9 +58,11 @@
     "cross-env": "^7.0.3",
     "eslint": "^8.42.0",
     "eslint-config-prettier": "^10.0.1",
+    "jsdom": "^29.0.2",
     "prettier": "^3.2.4",
     "typescript": "^5.2.2",
-    "vite": "^6.2.2"
+    "vite": "^6.2.2",
+    "vitest": "^4.1.3"
   },
   "workspaces": {
     "packages": [

@@ -3,18 +3,18 @@
  *
  * Important: Polaris props are often NOT on HTMLElement's prototype until the
  * custom element upgrades. Using `k in node` + setAttribute breaks camelCase
- * props (e.g. justifyContent → invalid attribute). For `s-*` tags we always
+ * props (e.g. justifyContent -> invalid attribute). For `s-*` tags we always
  * assign properties directly (Shopify's documented pattern).
  */
 const UNSAFE_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 
-function setProp(node, k, v) {
+function setProp(node: HTMLElement, k: string, v: unknown): void {
   if (k === "textContent") {
-    node.textContent = v;
+    node.textContent = String(v);
     return;
   }
   try {
-    node[k] = v;
+    (node as unknown as Record<string, unknown>)[k] = v;
   } catch {
     try {
       node.setAttribute(k, String(v));
@@ -24,9 +24,13 @@ function setProp(node, k, v) {
   }
 }
 
-export function el(tag, attrs, children) {
+export function el(
+  tag: string,
+  attrs?: Record<string, unknown>,
+  children?: (string | HTMLElement | null)[] | string | HTMLElement,
+): HTMLElement {
   const node = document.createElement(tag);
-  const isPolaris = typeof tag === "string" && tag.startsWith("s-");
+  const isPolaris = tag.startsWith("s-");
 
   if (attrs) {
     for (const [k, v] of Object.entries(attrs)) {
@@ -34,11 +38,11 @@ export function el(tag, attrs, children) {
       if (isPolaris) {
         setProp(node, k, v);
       } else if (k === "textContent") {
-        node.textContent = v;
+        node.textContent = String(v);
       } else if (k in node) {
-        node[k] = v;
+        (node as unknown as Record<string, unknown>)[k] = v;
       } else {
-        node.setAttribute(k, v);
+        node.setAttribute(k, String(v));
       }
     }
   }

@@ -1,17 +1,18 @@
 /**
  * Monthly recurring price from product metafield custom.monthly_price (Storefront API).
  */
+import type { CheckoutLine, AppMetafieldEntry, SubscriptionPricingDetails } from "./types.js";
 import { el } from "./polarisDom.js";
 import { isMobileSubscriptionLine } from "./subscriptionLines.js";
 
 const STOREFRONT_VERSION = "2025-10";
 
-export function parseMoneyValue(raw) {
+export function parseMoneyValue(raw: unknown): number {
   if (!raw) return 0;
   const trimmed = String(raw).trim();
   if (trimmed.startsWith("{")) {
     try {
-      const j = JSON.parse(trimmed);
+      const j = JSON.parse(trimmed) as Record<string, unknown>;
       const amt = j.amount ?? j.value;
       if (amt != null) return parseFloat(String(amt)) || 0;
     } catch {
@@ -22,7 +23,7 @@ export function parseMoneyValue(raw) {
   return parseFloat(cleaned) || 0;
 }
 
-function formatPrice(amount, currencyCode) {
+function formatPrice(amount: number | string, currencyCode: string): string {
   const num = typeof amount === "string" ? parseFloat(amount) : amount;
   if (isNaN(num)) return "";
   return new Intl.NumberFormat("de-CH", {
@@ -31,17 +32,19 @@ function formatPrice(amount, currencyCode) {
   }).format(num);
 }
 
-function getCurrencyCode() {
-  const cost = shopify.cost?.current;
-  return cost?.totalAmount?.currencyCode || "CHF";
+function getCurrencyCode(): string {
+  return shopify.cost?.current?.totalAmount?.currencyCode || "CHF";
 }
 
-function getOneTimePrice(line) {
+function getOneTimePrice(line: CheckoutLine): number {
   const amount = line?.cost?.totalAmount?.amount;
-  return typeof amount === "string" ? parseFloat(amount) || 0 : amount || 0;
+  return typeof amount === "string" ? parseFloat(amount) || 0 : 0;
 }
 
-function productIdMatchesTarget(productGid, target) {
+function productIdMatchesTarget(
+  productGid: string,
+  target: AppMetafieldEntry["target"],
+): boolean {
   if (!productGid || !target || target.type !== "product") return false;
   if (target.id === productGid) return true;
   const gidTail = productGid.split("/").pop();
@@ -51,7 +54,10 @@ function productIdMatchesTarget(productGid, target) {
   );
 }
 
-function getMetafieldFromAppEntries(productId, entries) {
+function getMetafieldFromAppEntries(
+  productId: string,
+  entries: AppMetafieldEntry[],
+): string | null {
   if (!entries?.length) return null;
   const hit = entries.find(
     (e) =>
@@ -62,7 +68,10 @@ function getMetafieldFromAppEntries(productId, entries) {
   return hit?.metafield?.value ?? null;
 }
 
-async function storefrontGraphql(query, variables) {
+async function storefrontGraphql(
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<{ data?: Record<string, unknown>; errors?: Array<{ message: string }> }> {
   const url = `shopify:storefront/api/${STOREFRONT_VERSION}/graphql.json`;
   const res = await fetch(url, {
     method: "POST",
@@ -72,7 +81,10 @@ async function storefrontGraphql(query, variables) {
   return res.json();
 }
 
-async function fetchMonthlyPriceFromStorefront(productId, variantId) {
+async function fetchMonthlyPriceFromStorefront(
+  productId: string,
+  variantId: string | undefined,
+): Promise<{ value: string | null; error: string | null }> {
   const qProduct = `query ProductMetafield($id: ID!) {
     product(id: $id) {
       metafield(namespace: "custom", key: "monthly_price") { value type }
@@ -105,7 +117,8 @@ async function fetchMonthlyPriceFromStorefront(productId, variantId) {
     };
   }
 
-  let mf = result?.data?.product?.metafield;
+  type MF = { value?: string; type?: string } | null | undefined;
+  let mf: MF = (result?.data?.product as { metafield?: MF } | undefined)?.metafield;
   const productMissing =
     result?.data && result.data.product === null && !result?.errors?.length;
 
@@ -115,14 +128,14 @@ async function fetchMonthlyPriceFromStorefront(productId, variantId) {
       version: STOREFRONT_VERSION,
     });
     if (!vr?.errors?.length) {
-      mf = vr?.data?.node?.product?.metafield ?? mf;
+      mf = (vr?.data?.node as { product?: { metafield?: MF } } | undefined)?.product?.metafield ?? mf;
     }
   }
 
   if (!mf?.value) {
     const nr = await shopify.query(qNode, opts);
     if (!nr?.errors?.length) {
-      mf = nr?.data?.node?.metafield ?? mf;
+      mf = (nr?.data?.node as { metafield?: MF } | undefined)?.metafield ?? mf;
     }
   }
 
@@ -135,9 +148,9 @@ async function fetchMonthlyPriceFromStorefront(productId, variantId) {
           error: fr.errors.map((e) => e.message).join(" "),
         };
       }
-      mf = fr?.data?.product?.metafield ?? mf;
+      mf = (fr?.data?.product as { metafield?: MF } | undefined)?.metafield ?? mf;
     } catch (e) {
-      return { value: null, error: String(e?.message || e) };
+      return { value: null, error: String((e as Error)?.message || e) };
     }
   }
 
@@ -152,7 +165,10 @@ async function fetchMonthlyPriceFromStorefront(productId, variantId) {
   return { value: mf?.value ?? null, error: null };
 }
 
-async function resolveMonthlyRaw(productId, variantId) {
+async function resolveMonthlyRaw(
+  productId: string,
+  variantId: string | undefined,
+): Promise<{ value: string | null; error: string | null }> {
   const fromApp = getMetafieldFromAppEntries(
     productId,
     shopify.appMetafields?.current ?? [],
@@ -162,37 +178,25 @@ async function resolveMonthlyRaw(productId, variantId) {
 }
 
 /**
- * Aggregates monthly total and plan titles for subscription lines.
- */
-export async function getMonthlyPricingDetails(subscriptionLines) {
-  const pricing = await getSubscriptionPricingDetails(subscriptionLines);
-  return {
-    monthlyTotal: pricing.monthlyTotal,
-    planNames: pricing.planNames,
-    anyError: pricing.anyError,
-  };
-}
-
-/**
  * Aggregates recurring and one-time totals plus per-line pricing.
  */
-export async function getSubscriptionPricingDetails(subscriptionLines) {
+export async function getSubscriptionPricingDetails(
+  subscriptionLines: CheckoutLine[],
+): Promise<SubscriptionPricingDetails> {
   let monthlyTotal = 0;
   let oneTimeTotal = 0;
-  const planNames = [];
-  let anyError = null;
-  const plans = [];
+  const planNames: string[] = [];
+  let anyError: string | null = null;
+  const plans: SubscriptionPricingDetails["plans"] = [];
 
   for (const line of subscriptionLines) {
     const productId = line.merchandise?.product?.id;
     const variantId = line.merchandise?.id;
-    const { value: raw, error } = await resolveMonthlyRaw(productId, variantId);
+    const { value: raw, error } = await resolveMonthlyRaw(productId || "", variantId);
     if (error) anyError = error;
     const monthlyPrice = raw ? parseMoneyValue(raw) * (line.quantity || 1) : 0;
     const oneTimePrice = getOneTimePrice(line);
-    if (raw) {
-      monthlyTotal += monthlyPrice;
-    }
+    if (raw) monthlyTotal += monthlyPrice;
     oneTimeTotal += oneTimePrice;
     const title = line.merchandise?.title || line.merchandise?.product?.title;
     if (title) planNames.push(title);
@@ -208,9 +212,12 @@ export async function getSubscriptionPricingDetails(subscriptionLines) {
 }
 
 /**
- * Order summary (right column): divider + label/price row + plan name — matches native totals styling.
+ * Order summary: divider + label/price row + plan name -- matches native totals styling.
  */
-export function mountOrderSummaryMonthlyPricing(container, subscriptionLines) {
+export function mountOrderSummaryMonthlyPricing(
+  container: HTMLElement,
+  subscriptionLines: CheckoutLine[],
+): void {
   container.replaceChildren();
 
   const currencyCode = getCurrencyCode();
@@ -224,11 +231,11 @@ export function mountOrderSummaryMonthlyPricing(container, subscriptionLines) {
   });
   loading.appendChild(el("s-spinner"));
   loading.appendChild(
-    el("s-text", { color: "subdued", textContent: "Loading monthly price…" }),
+    el("s-text", { color: "subdued", textContent: "Loading monthly price\u2026" }),
   );
   wrapper.appendChild(loading);
 
-  (async () => {
+  void (async () => {
     try {
       const { monthlyTotal, oneTimeTotal, planNames, anyError } =
         await getSubscriptionPricingDetails(subscriptionLines);
@@ -245,9 +252,7 @@ export function mountOrderSummaryMonthlyPricing(container, subscriptionLines) {
           el("s-text", { textContent: "One-time fees today" }),
         );
         oneTimeRow.appendChild(
-          el("s-text", {
-            textContent: formatPrice(oneTimeTotal, currencyCode),
-          }),
+          el("s-text", { textContent: formatPrice(oneTimeTotal, currencyCode) }),
         );
         wrapper.appendChild(oneTimeRow);
 
@@ -288,7 +293,6 @@ export function mountOrderSummaryMonthlyPricing(container, subscriptionLines) {
         monthlyTotal <= 0 &&
         !anyError
       ) {
-        // Expected subscription product but metafield missing / zero
         wrapper.appendChild(
           el("s-banner", {
             tone: "info",
@@ -303,7 +307,7 @@ export function mountOrderSummaryMonthlyPricing(container, subscriptionLines) {
       wrapper.appendChild(
         el("s-banner", {
           tone: "critical",
-          textContent: String(e?.message || e),
+          textContent: String((e as Error)?.message || e),
         }),
       );
     }

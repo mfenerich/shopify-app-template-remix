@@ -8,7 +8,7 @@ handle = "mobile-plan-onboarding"
 
 [[extensions.targeting]]
 target = "purchase.checkout.block.render"
-module = "./src/Checkout.jsx"
+module = "./src/Checkout.tsx"
 
 # Preload product metafields into checkout (also enables appMetafields for this key).
 [[extensions.metafields]]
@@ -19,3 +19,11 @@ key = "monthly_price"
 network_access = true
 api_access = true
 block_progress = true
+
+[extensions.settings]
+
+  [[extensions.settings.fields]]
+  key = "numbers_api_origin"
+  type = "single_line_text_field"
+  name = "Numbers API origin"
+  description = "Base URL of the Remix app for number pool API calls (e.g. https://mobile-onboarding.example.com). No trailing slash."

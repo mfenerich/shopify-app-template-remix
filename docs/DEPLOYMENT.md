@@ -30,7 +30,7 @@ See **`docs/DOCKER.md`** for `docker compose` with nginx and the shared `certbot
 - **`shopify.query()` version** — Checkout extensions only support Storefront API versions up to **`2025-10`** in the `version` option. The pricing summary uses `version: '2025-10'` explicitly so queries work even when `api_version` in `shopify.extension.toml` is newer (e.g. `2026-01`).
 - **`[[extensions.metafields]]`** — Declaring `custom.monthly_price` in `shopify.extension.toml` preloads metafields for checkout and feeds `shopify.appMetafields`.
 - **Online Store publication** — The Storefront API only returns products that are available to the storefront. If `product` queries return `null`, open the product in Admin → **Publishing** (or **Sales channels**) and ensure **Online Store** is enabled.
-- **Monthly price (right column)** — In **Customize checkout**, add the **Mobile Plan Order Summary** app block and drag it into the **order summary** column. Details: **`docs/RIGHT_COLUMN_CHECKOUT.md`**. Optional left fallback: **`docs/ORDER_SUMMARY_STATIC.md`**.
+- **Numbers API origin** — In the checkout editor, select the **Mobile Plan Onboarding** block and set the **Numbers API origin** setting to your app's public URL (e.g. `https://mobile-onboarding.example.com`). If left blank, falls back to `application_url` from the app config.
 
 ## Data & privacy
 
